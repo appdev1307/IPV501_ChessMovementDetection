@@ -20,7 +20,7 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     return gray
 
 def find_chessboard_region(image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-    """Detect the region of interest (ROI) containing the chessboard."""
+    """Detect the region of interest (ROI) containing the digital chessboard, prioritizing the right side."""
     gray = preprocess_image(image)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
     
@@ -29,16 +29,27 @@ def find_chessboard_region(image: np.ndarray) -> Optional[Tuple[int, int, int, i
     if not contours:
         return None
     
+    image_width = image.shape[1]
+    candidates = []
+    
     # Filter for rectangular contours (potential chessboard)
-    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:  # Check top 5 largest contours
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:10]:  # Check top 10 largest contours
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
         if len(approx) == 4:  # Quadrilateral
             x, y, w, h = cv2.boundingRect(approx)
             aspect_ratio = w / float(h)
-            if 0.8 < aspect_ratio < 1.2 and w * h > 0.1 * image.shape[0] * image.shape[1]:  # Square-like and large enough
-                return (x, y, w, h)
-    return None
+            area = w * h
+            # Prioritize square-like regions on the right side, typical for digital boards
+            if (0.8 < aspect_ratio < 1.2 and 
+                area > 0.05 * image.shape[0] * image.shape[1] and  # Not too small
+                area < 0.5 * image.shape[0] * image.shape[1] and   # Not too large (avoid physical board)
+                x > image_width / 2):  # Right side of the frame
+                candidates.append((x, y, w, h))
+    
+    # Sort candidates by x-coordinate (rightmost first)
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0] if candidates else None
 
 def find_chessboard_corners(image: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     """Find chessboard corners in the image or ROI."""
@@ -59,7 +70,6 @@ def find_chessboard_corners(image: np.ndarray, roi: Optional[Tuple[int, int, int
             criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         )
         if roi:
-            # Adjust corners to original image coordinates
             corners += np.array([x, y], dtype=np.float32)
         return corners, gray
     return None, None
@@ -265,17 +275,4 @@ def process_video(source: str, is_youtube: bool = False, debug_dir: str = "debug
         os.remove(temp_file)
 
 def main():
-    parser = argparse.ArgumentParser(description="Detect chess moves and pieces from video feed, local file, or YouTube.")
-    parser.add_argument("--video", type=str, default="", help="Path to local video file (leave empty for webcam).")
-    parser.add_argument("--youtube", type=str, default="", help="YouTube video URL.")
-    parser.add_argument("--debug-dir", type=str, default="debug_frames", help="Directory to save debug frames.")
-    parser.add_argument("--roi", type=int, nargs=4, help="Manual ROI coordinates [x, y, width, height].")
-    args = parser.parse_args()
-
-    if args.youtube:
-        process_video(args.youtube, is_youtube=True, debug_dir=args.debug_dir, manual_roi=args.roi)
-    else:
-        process_video(args.video, is_youtube=False, debug_dir=args.debug_dir, manual_roi=args.roi)
-
-if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description
