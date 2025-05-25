@@ -1,1 +1,5 @@
 python download_youtube_video.py --url https://www.youtube.com/watch?v=VIDEO_ID --output /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise
+
+
+pip install yt-dlp
+yt-dlp "https://www.youtube.com/watch?v=8neNxAjdDTI" -o /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/video.mp4
