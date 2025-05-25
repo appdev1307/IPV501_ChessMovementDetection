@@ -1,31 +1,10 @@
-Since the query asks for an example of a chess video clip, and considering the context of the previous conversation about detecting a chessboard and pieces in a video feed, I’ll provide an example of a chess video clip that would be suitable for testing the implemented code. The clip should feature a clear, top-down view of a standard 8x8 chessboard with piece movements, aligning with the code’s requirements for chessboard and piece detection. Based on the provided web results, I’ll select a relevant example and describe it, ensuring it’s a publicly accessible clip that fits the use case.
+python download_youtube_video.py --url https://www.youtube.com/watch?v=8neNxAjdDTI --output /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise
 
-### Example Chess Video Clip
-**Source**: Pixabay - Chess Stock Footage  
-**Description**: A high-quality 4K video clip available on Pixabay, showing a top-down view of a chessboard during a game. The clip captures a player’s hand moving a chess piece (e.g., a knight or pawn) from one square to another, with clear visibility of the 8x8 chessboard and alternating light/dark squares. The video is royalty-free, has no attribution required, and is suitable for testing chessboard detection and piece movement tracking.  
-**Link**: [Pixabay Chess Videos](https://pixabay.com/videos/search/chess/)[](https://pixabay.com/videos/search/chess/)
-**Details**:
-- **Duration**: Typically short (e.g., 10-30 seconds), focusing on a single move or a sequence of moves.
-- **Content**: The clip shows a standard chessboard with pieces in play, likely starting from a common opening position (e.g., after 1. e4 e5). A piece is moved (e.g., from e2 to e4), and the camera angle is stable and top-down, ideal for OpenCV’s corner detection.
-- **Use Case**: This clip can be used with the provided Python code by passing the video file path via the `--video` argument (e.g., `python chess_move_detector.py --video downloaded_clip.mp4`). The code will detect the chessboard, identify squares, detect the piece movement, and output the move in chess notation (e.g., “white unknown from e2 to e4”).
-- **Access**: Downloadable for free from Pixabay. Search for “chess” on their video section, and select a clip showing a clear chessboard with piece movement.
 
-### Why This Clip?
-- **Relevance**: The Pixabay clip meets the code’s assumptions: a clear, top-down view of a standard 8x8 chessboard with sufficient contrast between pieces and squares.
-- **Accessibility**: It’s freely available, making it easy to download and test without cost or licensing issues.
-- **Suitability**: The short duration and focus on piece movement align with the code’s purpose of detecting moves and pieces in a video feed.
 
-### How to Use with the Code
-1. **Download the Clip**: Visit [Pixabay](https://pixabay.com/videos/search/chess/), search for a chess video showing a top-down board with a piece move, and download it (e.g., in MP4 format).
-2. **Run the Script**:
-   ```bash
-   python chess_move_detector.py --video path/to/downloaded_clip.mp4
-   ```
-3. **Expected Output**: The script will process the video, detect the chessboard, identify pieces (as white or black, type “unknown”), and output any detected moves (e.g., “white unknown from e2 to e4”) while displaying the video with chessboard corners overlaid.
 
-### Notes
-- **Piece Detection**: The current code detects pieces based on color (white/black) but labels types as “unknown.” For testing with this clip, ensure the pieces have good contrast with the board.
-- **Adjustments**: If the clip has different lighting or piece colors, you may need to tweak the HSV ranges in the `detect_piece` function (e.g., `white_lower`, `black_lower`).
-- **Alternative Sources**: Similar clips are available on Pexels ([www.pexels.com](https://www.pexels.com)) or Videezy ([www.videezy.com](https://www.videezy.com)), which also offer free chess stock footage with top-down views.[](https://www.pexels.com/search/videos/chess/)[](https://www.videezy.com/free-video/chess)
+test case 1: python chess_move_detector.py --video /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/video.mp4.mkv
 
-This Pixabay clip is an excellent example for testing the chess move and piece detection system due to its clarity and accessibility. If you need help downloading a specific clip or modifying the code for better piece detection, let me know!
+
+test case 2: 
+python chess_move_detector.py --image /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/ChessBoard_Test.png --debug-dir /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/debug_frames
