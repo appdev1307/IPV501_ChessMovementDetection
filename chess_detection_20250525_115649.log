@@ -1,0 +1,547 @@
+2025-05-25 11:56:49,190 - INFO - Starting chess detection program
+2025-05-25 11:56:49,191 - INFO - Starting chess video processing
+2025-05-25 11:56:49,192 - INFO - Opening file dialog to select video
+2025-05-25 11:56:52,251 - INFO - Selected video file: C:/Users/xrl00/test/IPV501_ChessMovementDetection/chess-game.mkv
+2025-05-25 11:56:52,252 - INFO - Opening video file: C:/Users/xrl00/test/IPV501_ChessMovementDetection/chess-game.mkv
+2025-05-25 11:56:52,284 - INFO - Video properties - Width: 1092, Height: 614, FPS: 30.0, Total frames: 3156
+2025-05-25 11:56:52,285 - DEBUG - Generating square coordinates
+2025-05-25 11:56:52,286 - INFO - Initializing chess rules
+2025-05-25 11:56:52,287 - DEBUG - Creating initial board position
+2025-05-25 11:56:52,288 - DEBUG - Initial position created successfully
+2025-05-25 11:56:52,288 - INFO - Chess board initialized with starting position
+2025-05-25 11:56:52,289 - INFO - Starting video processing loop
+2025-05-25 11:56:52,290 - DEBUG - Processing frame 1
+2025-05-25 11:56:52,313 - DEBUG - Successfully read frame 1
+2025-05-25 11:56:52,313 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:52,707 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:52,708 - DEBUG - Could not find chessboard in frame 1
+2025-05-25 11:56:52,709 - DEBUG - Processing frame 2
+2025-05-25 11:56:52,712 - DEBUG - Successfully read frame 2
+2025-05-25 11:56:52,713 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:53,041 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:53,042 - DEBUG - Could not find chessboard in frame 2
+2025-05-25 11:56:53,043 - DEBUG - Processing frame 3
+2025-05-25 11:56:53,046 - DEBUG - Successfully read frame 3
+2025-05-25 11:56:53,047 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:53,382 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:53,383 - DEBUG - Could not find chessboard in frame 3
+2025-05-25 11:56:53,383 - DEBUG - Processing frame 4
+2025-05-25 11:56:53,386 - DEBUG - Successfully read frame 4
+2025-05-25 11:56:53,387 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:53,677 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:53,678 - DEBUG - Could not find chessboard in frame 4
+2025-05-25 11:56:53,679 - DEBUG - Processing frame 5
+2025-05-25 11:56:53,682 - DEBUG - Successfully read frame 5
+2025-05-25 11:56:53,683 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:53,969 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:53,969 - DEBUG - Could not find chessboard in frame 5
+2025-05-25 11:56:53,970 - DEBUG - Processing frame 6
+2025-05-25 11:56:53,974 - DEBUG - Successfully read frame 6
+2025-05-25 11:56:53,974 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:54,290 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:54,290 - DEBUG - Could not find chessboard in frame 6
+2025-05-25 11:56:54,291 - DEBUG - Processing frame 7
+2025-05-25 11:56:54,295 - DEBUG - Successfully read frame 7
+2025-05-25 11:56:54,295 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:54,596 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:54,597 - DEBUG - Could not find chessboard in frame 7
+2025-05-25 11:56:54,597 - DEBUG - Processing frame 8
+2025-05-25 11:56:54,601 - DEBUG - Successfully read frame 8
+2025-05-25 11:56:54,602 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:54,968 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:54,969 - DEBUG - Could not find chessboard in frame 8
+2025-05-25 11:56:54,970 - DEBUG - Processing frame 9
+2025-05-25 11:56:54,974 - DEBUG - Successfully read frame 9
+2025-05-25 11:56:54,974 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:55,305 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:55,306 - DEBUG - Could not find chessboard in frame 9
+2025-05-25 11:56:55,307 - DEBUG - Processing frame 10
+2025-05-25 11:56:55,311 - DEBUG - Successfully read frame 10
+2025-05-25 11:56:55,312 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:55,653 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:55,654 - DEBUG - Could not find chessboard in frame 10
+2025-05-25 11:56:55,654 - DEBUG - Processing frame 11
+2025-05-25 11:56:55,658 - DEBUG - Successfully read frame 11
+2025-05-25 11:56:55,658 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:55,976 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:55,977 - DEBUG - Could not find chessboard in frame 11
+2025-05-25 11:56:55,977 - DEBUG - Processing frame 12
+2025-05-25 11:56:55,981 - DEBUG - Successfully read frame 12
+2025-05-25 11:56:55,981 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:56,287 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:56,288 - DEBUG - Could not find chessboard in frame 12
+2025-05-25 11:56:56,289 - DEBUG - Processing frame 13
+2025-05-25 11:56:56,292 - DEBUG - Successfully read frame 13
+2025-05-25 11:56:56,293 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:56,601 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:56,602 - DEBUG - Could not find chessboard in frame 13
+2025-05-25 11:56:56,602 - DEBUG - Processing frame 14
+2025-05-25 11:56:56,606 - DEBUG - Successfully read frame 14
+2025-05-25 11:56:56,606 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:56,917 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:56,918 - DEBUG - Could not find chessboard in frame 14
+2025-05-25 11:56:56,918 - DEBUG - Processing frame 15
+2025-05-25 11:56:56,922 - DEBUG - Successfully read frame 15
+2025-05-25 11:56:56,922 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:57,286 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:57,287 - DEBUG - Could not find chessboard in frame 15
+2025-05-25 11:56:57,287 - DEBUG - Processing frame 16
+2025-05-25 11:56:57,291 - DEBUG - Successfully read frame 16
+2025-05-25 11:56:57,292 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:57,643 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:57,644 - DEBUG - Could not find chessboard in frame 16
+2025-05-25 11:56:57,645 - DEBUG - Processing frame 17
+2025-05-25 11:56:57,649 - DEBUG - Successfully read frame 17
+2025-05-25 11:56:57,649 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:57,975 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:57,977 - DEBUG - Could not find chessboard in frame 17
+2025-05-25 11:56:57,977 - DEBUG - Processing frame 18
+2025-05-25 11:56:57,981 - DEBUG - Successfully read frame 18
+2025-05-25 11:56:57,981 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:58,248 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:58,249 - DEBUG - Could not find chessboard in frame 18
+2025-05-25 11:56:58,250 - DEBUG - Processing frame 19
+2025-05-25 11:56:58,253 - DEBUG - Successfully read frame 19
+2025-05-25 11:56:58,254 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:58,520 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:58,521 - DEBUG - Could not find chessboard in frame 19
+2025-05-25 11:56:58,521 - DEBUG - Processing frame 20
+2025-05-25 11:56:58,525 - DEBUG - Successfully read frame 20
+2025-05-25 11:56:58,525 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:58,785 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:58,786 - DEBUG - Could not find chessboard in frame 20
+2025-05-25 11:56:58,787 - DEBUG - Processing frame 21
+2025-05-25 11:56:58,790 - DEBUG - Successfully read frame 21
+2025-05-25 11:56:58,790 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:59,124 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:59,125 - DEBUG - Could not find chessboard in frame 21
+2025-05-25 11:56:59,125 - DEBUG - Processing frame 22
+2025-05-25 11:56:59,128 - DEBUG - Successfully read frame 22
+2025-05-25 11:56:59,129 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:59,408 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:59,409 - DEBUG - Could not find chessboard in frame 22
+2025-05-25 11:56:59,410 - DEBUG - Processing frame 23
+2025-05-25 11:56:59,413 - DEBUG - Successfully read frame 23
+2025-05-25 11:56:59,413 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:56:59,714 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:56:59,715 - DEBUG - Could not find chessboard in frame 23
+2025-05-25 11:56:59,715 - DEBUG - Processing frame 24
+2025-05-25 11:56:59,718 - DEBUG - Successfully read frame 24
+2025-05-25 11:56:59,719 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:00,021 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:00,022 - DEBUG - Could not find chessboard in frame 24
+2025-05-25 11:57:00,023 - DEBUG - Processing frame 25
+2025-05-25 11:57:00,026 - DEBUG - Successfully read frame 25
+2025-05-25 11:57:00,027 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:00,299 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:00,300 - DEBUG - Could not find chessboard in frame 25
+2025-05-25 11:57:00,301 - DEBUG - Processing frame 26
+2025-05-25 11:57:00,304 - DEBUG - Successfully read frame 26
+2025-05-25 11:57:00,304 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:00,590 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:00,590 - DEBUG - Could not find chessboard in frame 26
+2025-05-25 11:57:00,591 - DEBUG - Processing frame 27
+2025-05-25 11:57:00,595 - DEBUG - Successfully read frame 27
+2025-05-25 11:57:00,595 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:00,859 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:00,859 - DEBUG - Could not find chessboard in frame 27
+2025-05-25 11:57:00,860 - DEBUG - Processing frame 28
+2025-05-25 11:57:00,863 - DEBUG - Successfully read frame 28
+2025-05-25 11:57:00,864 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:01,132 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:01,133 - DEBUG - Could not find chessboard in frame 28
+2025-05-25 11:57:01,133 - DEBUG - Processing frame 29
+2025-05-25 11:57:01,136 - DEBUG - Successfully read frame 29
+2025-05-25 11:57:01,137 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:01,415 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:01,416 - DEBUG - Could not find chessboard in frame 29
+2025-05-25 11:57:01,417 - DEBUG - Processing frame 30
+2025-05-25 11:57:01,420 - DEBUG - Successfully read frame 30
+2025-05-25 11:57:01,420 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:01,700 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:01,701 - DEBUG - Could not find chessboard in frame 30
+2025-05-25 11:57:01,701 - DEBUG - Processing frame 31
+2025-05-25 11:57:01,705 - DEBUG - Successfully read frame 31
+2025-05-25 11:57:01,706 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:02,033 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:02,034 - DEBUG - Could not find chessboard in frame 31
+2025-05-25 11:57:02,034 - DEBUG - Processing frame 32
+2025-05-25 11:57:02,038 - DEBUG - Successfully read frame 32
+2025-05-25 11:57:02,039 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:02,381 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:02,382 - DEBUG - Could not find chessboard in frame 32
+2025-05-25 11:57:02,382 - DEBUG - Processing frame 33
+2025-05-25 11:57:02,386 - DEBUG - Successfully read frame 33
+2025-05-25 11:57:02,387 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:02,684 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:02,685 - DEBUG - Could not find chessboard in frame 33
+2025-05-25 11:57:02,685 - DEBUG - Processing frame 34
+2025-05-25 11:57:02,689 - DEBUG - Successfully read frame 34
+2025-05-25 11:57:02,689 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:02,980 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:02,981 - DEBUG - Could not find chessboard in frame 34
+2025-05-25 11:57:02,981 - DEBUG - Processing frame 35
+2025-05-25 11:57:02,984 - DEBUG - Successfully read frame 35
+2025-05-25 11:57:02,985 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:03,246 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:03,246 - DEBUG - Could not find chessboard in frame 35
+2025-05-25 11:57:03,247 - DEBUG - Processing frame 36
+2025-05-25 11:57:03,251 - DEBUG - Successfully read frame 36
+2025-05-25 11:57:03,251 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:03,507 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:03,508 - DEBUG - Could not find chessboard in frame 36
+2025-05-25 11:57:03,508 - DEBUG - Processing frame 37
+2025-05-25 11:57:03,511 - DEBUG - Successfully read frame 37
+2025-05-25 11:57:03,512 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:03,788 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:03,788 - DEBUG - Could not find chessboard in frame 37
+2025-05-25 11:57:03,789 - DEBUG - Processing frame 38
+2025-05-25 11:57:03,792 - DEBUG - Successfully read frame 38
+2025-05-25 11:57:03,793 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:04,079 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:04,080 - DEBUG - Could not find chessboard in frame 38
+2025-05-25 11:57:04,080 - DEBUG - Processing frame 39
+2025-05-25 11:57:04,084 - DEBUG - Successfully read frame 39
+2025-05-25 11:57:04,084 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:04,386 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:04,387 - DEBUG - Could not find chessboard in frame 39
+2025-05-25 11:57:04,388 - DEBUG - Processing frame 40
+2025-05-25 11:57:04,390 - DEBUG - Successfully read frame 40
+2025-05-25 11:57:04,391 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:04,882 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:04,885 - DEBUG - Could not find chessboard in frame 40
+2025-05-25 11:57:04,889 - DEBUG - Processing frame 41
+2025-05-25 11:57:04,898 - DEBUG - Successfully read frame 41
+2025-05-25 11:57:04,899 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:05,332 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:05,333 - DEBUG - Could not find chessboard in frame 41
+2025-05-25 11:57:05,334 - DEBUG - Processing frame 42
+2025-05-25 11:57:05,337 - DEBUG - Successfully read frame 42
+2025-05-25 11:57:05,339 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:05,629 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:05,630 - DEBUG - Could not find chessboard in frame 42
+2025-05-25 11:57:05,631 - DEBUG - Processing frame 43
+2025-05-25 11:57:05,634 - DEBUG - Successfully read frame 43
+2025-05-25 11:57:05,635 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:05,905 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:05,907 - DEBUG - Could not find chessboard in frame 43
+2025-05-25 11:57:05,908 - DEBUG - Processing frame 44
+2025-05-25 11:57:05,912 - DEBUG - Successfully read frame 44
+2025-05-25 11:57:05,913 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:06,230 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:06,231 - DEBUG - Could not find chessboard in frame 44
+2025-05-25 11:57:06,232 - DEBUG - Processing frame 45
+2025-05-25 11:57:06,235 - DEBUG - Successfully read frame 45
+2025-05-25 11:57:06,236 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:06,561 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:06,563 - DEBUG - Could not find chessboard in frame 45
+2025-05-25 11:57:06,566 - DEBUG - Processing frame 46
+2025-05-25 11:57:06,569 - DEBUG - Successfully read frame 46
+2025-05-25 11:57:06,571 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:06,893 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:06,894 - DEBUG - Could not find chessboard in frame 46
+2025-05-25 11:57:06,895 - DEBUG - Processing frame 47
+2025-05-25 11:57:06,899 - DEBUG - Successfully read frame 47
+2025-05-25 11:57:06,899 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:07,176 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:07,177 - DEBUG - Could not find chessboard in frame 47
+2025-05-25 11:57:07,178 - DEBUG - Processing frame 48
+2025-05-25 11:57:07,181 - DEBUG - Successfully read frame 48
+2025-05-25 11:57:07,182 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:07,501 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:07,502 - DEBUG - Could not find chessboard in frame 48
+2025-05-25 11:57:07,502 - DEBUG - Processing frame 49
+2025-05-25 11:57:07,505 - DEBUG - Successfully read frame 49
+2025-05-25 11:57:07,506 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:07,808 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:07,809 - DEBUG - Could not find chessboard in frame 49
+2025-05-25 11:57:07,810 - DEBUG - Processing frame 50
+2025-05-25 11:57:07,813 - DEBUG - Successfully read frame 50
+2025-05-25 11:57:07,813 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:08,106 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:08,107 - DEBUG - Could not find chessboard in frame 50
+2025-05-25 11:57:08,108 - DEBUG - Processing frame 51
+2025-05-25 11:57:08,111 - DEBUG - Successfully read frame 51
+2025-05-25 11:57:08,111 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:08,421 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:08,422 - DEBUG - Could not find chessboard in frame 51
+2025-05-25 11:57:08,423 - DEBUG - Processing frame 52
+2025-05-25 11:57:08,426 - DEBUG - Successfully read frame 52
+2025-05-25 11:57:08,427 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:08,722 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:08,723 - DEBUG - Could not find chessboard in frame 52
+2025-05-25 11:57:08,725 - DEBUG - Processing frame 53
+2025-05-25 11:57:08,728 - DEBUG - Successfully read frame 53
+2025-05-25 11:57:08,728 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:09,272 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:09,274 - DEBUG - Could not find chessboard in frame 53
+2025-05-25 11:57:09,274 - DEBUG - Processing frame 54
+2025-05-25 11:57:09,278 - DEBUG - Successfully read frame 54
+2025-05-25 11:57:09,280 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:09,597 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:09,598 - DEBUG - Could not find chessboard in frame 54
+2025-05-25 11:57:09,598 - DEBUG - Processing frame 55
+2025-05-25 11:57:09,602 - DEBUG - Successfully read frame 55
+2025-05-25 11:57:09,602 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:09,917 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:09,918 - DEBUG - Could not find chessboard in frame 55
+2025-05-25 11:57:09,918 - DEBUG - Processing frame 56
+2025-05-25 11:57:09,922 - DEBUG - Successfully read frame 56
+2025-05-25 11:57:09,923 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:10,278 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:10,279 - DEBUG - Could not find chessboard in frame 56
+2025-05-25 11:57:10,280 - DEBUG - Processing frame 57
+2025-05-25 11:57:10,283 - DEBUG - Successfully read frame 57
+2025-05-25 11:57:10,288 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:10,681 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:10,682 - DEBUG - Could not find chessboard in frame 57
+2025-05-25 11:57:10,683 - DEBUG - Processing frame 58
+2025-05-25 11:57:10,686 - DEBUG - Successfully read frame 58
+2025-05-25 11:57:10,687 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:11,044 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:11,045 - DEBUG - Could not find chessboard in frame 58
+2025-05-25 11:57:11,046 - DEBUG - Processing frame 59
+2025-05-25 11:57:11,049 - DEBUG - Successfully read frame 59
+2025-05-25 11:57:11,051 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:11,405 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:11,407 - DEBUG - Could not find chessboard in frame 59
+2025-05-25 11:57:11,411 - DEBUG - Processing frame 60
+2025-05-25 11:57:11,420 - DEBUG - Successfully read frame 60
+2025-05-25 11:57:11,421 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:11,792 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:11,793 - DEBUG - Could not find chessboard in frame 60
+2025-05-25 11:57:11,794 - DEBUG - Processing frame 61
+2025-05-25 11:57:11,797 - DEBUG - Successfully read frame 61
+2025-05-25 11:57:11,798 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:12,155 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:12,156 - DEBUG - Could not find chessboard in frame 61
+2025-05-25 11:57:12,157 - DEBUG - Processing frame 62
+2025-05-25 11:57:12,160 - DEBUG - Successfully read frame 62
+2025-05-25 11:57:12,161 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:12,631 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:12,632 - DEBUG - Could not find chessboard in frame 62
+2025-05-25 11:57:12,633 - DEBUG - Processing frame 63
+2025-05-25 11:57:12,638 - DEBUG - Successfully read frame 63
+2025-05-25 11:57:12,640 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:13,076 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:13,077 - DEBUG - Could not find chessboard in frame 63
+2025-05-25 11:57:13,078 - DEBUG - Processing frame 64
+2025-05-25 11:57:13,081 - DEBUG - Successfully read frame 64
+2025-05-25 11:57:13,082 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:13,498 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:13,499 - DEBUG - Could not find chessboard in frame 64
+2025-05-25 11:57:13,500 - DEBUG - Processing frame 65
+2025-05-25 11:57:13,504 - DEBUG - Successfully read frame 65
+2025-05-25 11:57:13,504 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:13,839 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:13,840 - DEBUG - Could not find chessboard in frame 65
+2025-05-25 11:57:13,842 - DEBUG - Processing frame 66
+2025-05-25 11:57:13,846 - DEBUG - Successfully read frame 66
+2025-05-25 11:57:13,848 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:14,281 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:14,283 - DEBUG - Could not find chessboard in frame 66
+2025-05-25 11:57:14,285 - DEBUG - Processing frame 67
+2025-05-25 11:57:14,290 - DEBUG - Successfully read frame 67
+2025-05-25 11:57:14,293 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:14,641 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:14,642 - DEBUG - Could not find chessboard in frame 67
+2025-05-25 11:57:14,643 - DEBUG - Processing frame 68
+2025-05-25 11:57:14,646 - DEBUG - Successfully read frame 68
+2025-05-25 11:57:14,647 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:14,939 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:14,940 - DEBUG - Could not find chessboard in frame 68
+2025-05-25 11:57:14,941 - DEBUG - Processing frame 69
+2025-05-25 11:57:14,944 - DEBUG - Successfully read frame 69
+2025-05-25 11:57:14,945 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:15,234 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:15,235 - DEBUG - Could not find chessboard in frame 69
+2025-05-25 11:57:15,236 - DEBUG - Processing frame 70
+2025-05-25 11:57:15,239 - DEBUG - Successfully read frame 70
+2025-05-25 11:57:15,239 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:15,519 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:15,520 - DEBUG - Could not find chessboard in frame 70
+2025-05-25 11:57:15,520 - DEBUG - Processing frame 71
+2025-05-25 11:57:15,524 - DEBUG - Successfully read frame 71
+2025-05-25 11:57:15,524 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:15,809 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:15,810 - DEBUG - Could not find chessboard in frame 71
+2025-05-25 11:57:15,810 - DEBUG - Processing frame 72
+2025-05-25 11:57:15,813 - DEBUG - Successfully read frame 72
+2025-05-25 11:57:15,814 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:16,097 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:16,098 - DEBUG - Could not find chessboard in frame 72
+2025-05-25 11:57:16,098 - DEBUG - Processing frame 73
+2025-05-25 11:57:16,102 - DEBUG - Successfully read frame 73
+2025-05-25 11:57:16,102 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:16,418 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:16,421 - DEBUG - Could not find chessboard in frame 73
+2025-05-25 11:57:16,421 - DEBUG - Processing frame 74
+2025-05-25 11:57:16,426 - DEBUG - Successfully read frame 74
+2025-05-25 11:57:16,428 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:16,767 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:16,768 - DEBUG - Could not find chessboard in frame 74
+2025-05-25 11:57:16,768 - DEBUG - Processing frame 75
+2025-05-25 11:57:16,772 - DEBUG - Successfully read frame 75
+2025-05-25 11:57:16,772 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:17,195 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:17,196 - DEBUG - Could not find chessboard in frame 75
+2025-05-25 11:57:17,196 - DEBUG - Processing frame 76
+2025-05-25 11:57:17,200 - DEBUG - Successfully read frame 76
+2025-05-25 11:57:17,201 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:17,494 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:17,495 - DEBUG - Could not find chessboard in frame 76
+2025-05-25 11:57:17,496 - DEBUG - Processing frame 77
+2025-05-25 11:57:17,499 - DEBUG - Successfully read frame 77
+2025-05-25 11:57:17,499 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:17,812 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:17,813 - DEBUG - Could not find chessboard in frame 77
+2025-05-25 11:57:17,814 - DEBUG - Processing frame 78
+2025-05-25 11:57:17,818 - DEBUG - Successfully read frame 78
+2025-05-25 11:57:17,819 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:18,130 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:18,131 - DEBUG - Could not find chessboard in frame 78
+2025-05-25 11:57:18,132 - DEBUG - Processing frame 79
+2025-05-25 11:57:18,135 - DEBUG - Successfully read frame 79
+2025-05-25 11:57:18,136 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:18,509 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:18,510 - DEBUG - Could not find chessboard in frame 79
+2025-05-25 11:57:18,510 - DEBUG - Processing frame 80
+2025-05-25 11:57:18,518 - DEBUG - Successfully read frame 80
+2025-05-25 11:57:18,519 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:19,025 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:19,060 - DEBUG - Could not find chessboard in frame 80
+2025-05-25 11:57:19,066 - DEBUG - Processing frame 81
+2025-05-25 11:57:19,078 - DEBUG - Successfully read frame 81
+2025-05-25 11:57:19,119 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:19,574 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:19,575 - DEBUG - Could not find chessboard in frame 81
+2025-05-25 11:57:19,576 - DEBUG - Processing frame 82
+2025-05-25 11:57:19,580 - DEBUG - Successfully read frame 82
+2025-05-25 11:57:19,581 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:19,925 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:19,926 - DEBUG - Could not find chessboard in frame 82
+2025-05-25 11:57:19,927 - DEBUG - Processing frame 83
+2025-05-25 11:57:19,930 - DEBUG - Successfully read frame 83
+2025-05-25 11:57:19,931 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:20,270 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:20,271 - DEBUG - Could not find chessboard in frame 83
+2025-05-25 11:57:20,272 - DEBUG - Processing frame 84
+2025-05-25 11:57:20,276 - DEBUG - Successfully read frame 84
+2025-05-25 11:57:20,276 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:20,618 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:20,619 - DEBUG - Could not find chessboard in frame 84
+2025-05-25 11:57:20,620 - DEBUG - Processing frame 85
+2025-05-25 11:57:20,624 - DEBUG - Successfully read frame 85
+2025-05-25 11:57:20,625 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:21,000 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:21,001 - DEBUG - Could not find chessboard in frame 85
+2025-05-25 11:57:21,002 - DEBUG - Processing frame 86
+2025-05-25 11:57:21,005 - DEBUG - Successfully read frame 86
+2025-05-25 11:57:21,006 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:21,319 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:21,320 - DEBUG - Could not find chessboard in frame 86
+2025-05-25 11:57:21,320 - DEBUG - Processing frame 87
+2025-05-25 11:57:21,324 - DEBUG - Successfully read frame 87
+2025-05-25 11:57:21,325 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:21,706 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:21,710 - DEBUG - Could not find chessboard in frame 87
+2025-05-25 11:57:21,711 - DEBUG - Processing frame 88
+2025-05-25 11:57:21,716 - DEBUG - Successfully read frame 88
+2025-05-25 11:57:21,717 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:22,106 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:22,108 - DEBUG - Could not find chessboard in frame 88
+2025-05-25 11:57:22,109 - DEBUG - Processing frame 89
+2025-05-25 11:57:22,113 - DEBUG - Successfully read frame 89
+2025-05-25 11:57:22,114 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:22,422 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:22,424 - DEBUG - Could not find chessboard in frame 89
+2025-05-25 11:57:22,424 - DEBUG - Processing frame 90
+2025-05-25 11:57:22,428 - DEBUG - Successfully read frame 90
+2025-05-25 11:57:22,435 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:22,745 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:22,746 - DEBUG - Could not find chessboard in frame 90
+2025-05-25 11:57:22,746 - DEBUG - Processing frame 91
+2025-05-25 11:57:22,750 - DEBUG - Successfully read frame 91
+2025-05-25 11:57:22,750 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:23,052 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:23,053 - DEBUG - Could not find chessboard in frame 91
+2025-05-25 11:57:23,054 - DEBUG - Processing frame 92
+2025-05-25 11:57:23,058 - DEBUG - Successfully read frame 92
+2025-05-25 11:57:23,059 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:23,345 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:23,346 - DEBUG - Could not find chessboard in frame 92
+2025-05-25 11:57:23,346 - DEBUG - Processing frame 93
+2025-05-25 11:57:23,350 - DEBUG - Successfully read frame 93
+2025-05-25 11:57:23,350 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:23,670 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:23,671 - DEBUG - Could not find chessboard in frame 93
+2025-05-25 11:57:23,671 - DEBUG - Processing frame 94
+2025-05-25 11:57:23,675 - DEBUG - Successfully read frame 94
+2025-05-25 11:57:23,675 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:24,003 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:24,004 - DEBUG - Could not find chessboard in frame 94
+2025-05-25 11:57:24,006 - DEBUG - Processing frame 95
+2025-05-25 11:57:24,011 - DEBUG - Successfully read frame 95
+2025-05-25 11:57:24,011 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:24,418 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:24,419 - DEBUG - Could not find chessboard in frame 95
+2025-05-25 11:57:24,420 - DEBUG - Processing frame 96
+2025-05-25 11:57:24,423 - DEBUG - Successfully read frame 96
+2025-05-25 11:57:24,424 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:24,713 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:24,714 - DEBUG - Could not find chessboard in frame 96
+2025-05-25 11:57:24,714 - DEBUG - Processing frame 97
+2025-05-25 11:57:24,726 - DEBUG - Successfully read frame 97
+2025-05-25 11:57:24,726 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:25,040 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:25,041 - DEBUG - Could not find chessboard in frame 97
+2025-05-25 11:57:25,042 - DEBUG - Processing frame 98
+2025-05-25 11:57:25,045 - DEBUG - Successfully read frame 98
+2025-05-25 11:57:25,046 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:25,375 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:25,378 - DEBUG - Could not find chessboard in frame 98
+2025-05-25 11:57:25,380 - DEBUG - Processing frame 99
+2025-05-25 11:57:25,384 - DEBUG - Successfully read frame 99
+2025-05-25 11:57:25,385 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:25,680 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:25,681 - DEBUG - Could not find chessboard in frame 99
+2025-05-25 11:57:25,681 - DEBUG - Processing frame 100
+2025-05-25 11:57:25,685 - DEBUG - Successfully read frame 100
+2025-05-25 11:57:25,685 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:26,006 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:26,007 - DEBUG - Could not find chessboard in frame 100
+2025-05-25 11:57:26,008 - DEBUG - Processing frame 101
+2025-05-25 11:57:26,011 - DEBUG - Successfully read frame 101
+2025-05-25 11:57:26,012 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:26,369 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:26,371 - DEBUG - Could not find chessboard in frame 101
+2025-05-25 11:57:26,372 - DEBUG - Processing frame 102
+2025-05-25 11:57:26,376 - DEBUG - Successfully read frame 102
+2025-05-25 11:57:26,377 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:26,772 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:26,773 - DEBUG - Could not find chessboard in frame 102
+2025-05-25 11:57:26,774 - DEBUG - Processing frame 103
+2025-05-25 11:57:26,778 - DEBUG - Successfully read frame 103
+2025-05-25 11:57:26,779 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:27,188 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:27,189 - DEBUG - Could not find chessboard in frame 103
+2025-05-25 11:57:27,190 - DEBUG - Processing frame 104
+2025-05-25 11:57:27,196 - DEBUG - Successfully read frame 104
+2025-05-25 11:57:27,197 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:27,615 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:27,616 - DEBUG - Could not find chessboard in frame 104
+2025-05-25 11:57:27,617 - DEBUG - Processing frame 105
+2025-05-25 11:57:27,620 - DEBUG - Successfully read frame 105
+2025-05-25 11:57:27,621 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:27,990 - DEBUG - No chessboard corners found in frame
+2025-05-25 11:57:27,992 - DEBUG - Could not find chessboard in frame 105
+2025-05-25 11:57:27,993 - DEBUG - Processing frame 106
+2025-05-25 11:57:27,997 - DEBUG - Successfully read frame 106
+2025-05-25 11:57:27,998 - DEBUG - Attempting to find chessboard corners
+2025-05-25 11:57:28,370 - INFO - Releasing video capture
+2025-05-25 11:57:28,384 - INFO - Creating game slideshow
+2025-05-25 11:57:28,384 - INFO - Starting slideshow creation
+2025-05-25 11:57:28,385 - WARNING - No moves recorded for slideshow
+2025-05-25 11:57:28,385 - INFO - Processing complete. Total frames processed: 106
+2025-05-25 11:57:28,386 - INFO - Total moves detected: 0
+2025-05-25 11:57:28,387 - INFO - Program completed successfully
