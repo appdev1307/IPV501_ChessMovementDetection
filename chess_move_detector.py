@@ -24,7 +24,6 @@ def find_chessboard_region(image: np.ndarray) -> Optional[Tuple[int, int, int, i
     gray = preprocess_image(image)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
     
-    # Find contours
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
@@ -32,22 +31,19 @@ def find_chessboard_region(image: np.ndarray) -> Optional[Tuple[int, int, int, i
     image_width = image.shape[1]
     candidates = []
     
-    # Filter for rectangular contours (potential chessboard)
-    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:10]:  # Check top 10 largest contours
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:10]:
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        if len(approx) == 4:  # Quadrilateral
+        if len(approx) == 4:
             x, y, w, h = cv2.boundingRect(approx)
             aspect_ratio = w / float(h)
             area = w * h
-            # Prioritize square-like regions on the right side, typical for digital boards
             if (0.8 < aspect_ratio < 1.2 and 
-                area > 0.05 * image.shape[0] * image.shape[1] and  # Not too small
-                area < 0.5 * image.shape[0] * image.shape[1] and   # Not too large (avoid physical board)
-                x > image_width / 2):  # Right side of the frame
+                area > 0.05 * image.shape[0] * image.shape[1] and
+                area < 0.5 * image.shape[0] * image.shape[1] and
+                x > image_width / 2):
                 candidates.append((x, y, w, h))
     
-    # Sort candidates by x-coordinate (rightmost first)
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0] if candidates else None
 
@@ -184,6 +180,57 @@ def download_youtube_video(url: str) -> str:
         print(f"Error downloading YouTube video: {e}")
         return ""
 
+def process_image(image_path: str, debug_dir: str = "debug_frames", manual_roi: Optional[List[int]] = None):
+    """Process a single image to detect chessboard and pieces."""
+    frame = cv2.imread(image_path)
+    if frame is None:
+        print(f"Error: Could not load image from {image_path}")
+        return
+
+    os.makedirs(debug_dir, exist_ok=True)
+
+    # Detect ROI
+    roi = manual_roi
+    if not roi:
+        roi = find_chessboard_region(frame)
+    
+    if roi:
+        x, y, w, h = roi
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        roi_frame = frame[y:y+h, x:x+w]
+        debug_roi_path = os.path.join(debug_dir, "roi_image.jpg")
+        cv2.imwrite(debug_roi_path, roi_frame)
+        print(f"Saved ROI debug image: {debug_roi_path}")
+    else:
+        roi_frame = frame
+        print("Could not detect chessboard region.")
+
+    corners, gray = find_chessboard_corners(frame, roi)
+    if corners is not None:
+        cv2.drawChessboardCorners(frame, CHESSBOARD_CORNERS, corners, True)
+        matrix = get_perspective_transform(corners)
+        warped = cv2.warpPerspective(gray, matrix, (SQUARE_SIZE * BOARD_SIZE, SQUARE_SIZE * BOARD_SIZE))
+        curr_squares = divide_board(warped)
+
+        board_state = [None] * (BOARD_SIZE * BOARD_SIZE)
+        for i in range(len(curr_squares)):
+            piece_info = detect_piece(curr_squares[i], frame, i, matrix, frame)
+            board_state[i] = piece_info
+
+        for i, piece in enumerate(board_state):
+            if piece:
+                pos = index_to_notation(i)
+                print(f"Square {pos}: {piece['color']} {piece['type']}")
+    else:
+        print("Chessboard not detected.")
+        debug_path = os.path.join(debug_dir, "image.jpg")
+        cv2.imwrite(debug_path, frame)
+        print(f"Saved debug image: {debug_path}")
+
+    cv2.imshow('Chessboard', frame)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
 def process_video(source: str, is_youtube: bool = False, debug_dir: str = "debug_frames", manual_roi: Optional[List[int]] = None):
     """Process video feed, local file, or YouTube video to detect chess moves and pieces."""
     temp_file = None
@@ -215,14 +262,13 @@ def process_video(source: str, is_youtube: bool = False, debug_dir: str = "debug
             print("End of video or error reading frame.")
             break
 
-        # Detect ROI
         roi = manual_roi
         if not roi:
             roi = find_chessboard_region(frame)
         
         if roi:
             x, y, w, h = roi
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)  # Draw ROI
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             roi_frame = frame[y:y+h, x:x+w]
             debug_roi_path = os.path.join(debug_dir, f"roi_frame_{frame_count}.jpg")
             cv2.imwrite(debug_roi_path, roi_frame)
@@ -275,4 +321,20 @@ def process_video(source: str, is_youtube: bool = False, debug_dir: str = "debug
         os.remove(temp_file)
 
 def main():
-    parser = argparse.ArgumentParser(description
+    parser = argparse.ArgumentParser(description="Detect chess moves and pieces from image, video feed, local file, or YouTube.")
+    parser.add_argument("--image", type=str, default="", help="Path to image file.")
+    parser.add_argument("--video", type=str, default="", help="Path to local video file (leave empty for webcam).")
+    parser.add_argument("--youtube", type=str, default="", help="YouTube video URL.")
+    parser.add_argument("--debug-dir", type=str, default="debug_frames", help="Directory to save debug frames.")
+    parser.add_argument("--roi", type=int, nargs=4, help="Manual ROI coordinates [x, y, width, height].")
+    args = parser.parse_args()
+
+    if args.image:
+        process_image(args.image, debug_dir=args.debug_dir, manual_roi=args.roi)
+    elif args.youtube:
+        process_video(args.youtube, is_youtube=True, debug_dir=args.debug_dir, manual_roi=args.roi)
+    else:
+        process_video(args.video, is_youtube=False, debug_dir=args.debug_dir, manual_roi=args.roi)
+
+if __name__ == "__main__":
+    main()
