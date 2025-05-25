@@ -2,26 +2,70 @@ import cv2
 import numpy as np
 from typing import Optional, Tuple, List, Dict
 import argparse
+import os
+import tempfile
+from pytube import YouTube
 
 # Chessboard constants
 BOARD_SIZE = 8
 SQUARE_SIZE = 50  # Approximate size for transformed board
 CHESSBOARD_CORNERS = (7, 7)  # Inner corners for 8x8 board
 
-def find_chessboard_corners(image: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """Find chessboard corners in the image."""
+def preprocess_image(image: np.ndarray) -> np.ndarray:
+    """Preprocess image to improve chessboard detection."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    ret, corners = cv2.findChessboardCorners(gray, CHESSBOARD_CORNERS, None)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    return gray
+
+def find_chessboard_region(image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
+    """Detect the region of interest (ROI) containing the chessboard."""
+    gray = preprocess_image(image)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    
+    # Find contours
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    
+    # Filter for rectangular contours (potential chessboard)
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:  # Check top 5 largest contours
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        if len(approx) == 4:  # Quadrilateral
+            x, y, w, h = cv2.boundingRect(approx)
+            aspect_ratio = w / float(h)
+            if 0.8 < aspect_ratio < 1.2 and w * h > 0.1 * image.shape[0] * image.shape[1]:  # Square-like and large enough
+                return (x, y, w, h)
+    return None
+
+def find_chessboard_corners(image: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Find chessboard corners in the image or ROI."""
+    if roi:
+        x, y, w, h = roi
+        cropped = image[y:y+h, x:x+w]
+        if cropped.size == 0:
+            return None, None
+    else:
+        cropped = image
+    
+    gray = preprocess_image(cropped)
+    flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FAST_CHECK
+    ret, corners = cv2.findChessboardCorners(gray, CHESSBOARD_CORNERS, flags=flags)
     if ret:
         corners = cv2.cornerSubPix(
             gray, corners, (11, 11), (-1, -1),
             criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         )
+        if roi:
+            # Adjust corners to original image coordinates
+            corners += np.array([x, y], dtype=np.float32)
         return corners, gray
     return None, None
 
 def get_perspective_transform(corners: np.ndarray, size: int = SQUARE_SIZE * BOARD_SIZE) -> Optional[np.ndarray]:
-    """Calculate perspective transform to warp chessboard to a square grid."""
+    """Calculate perspective transform to warp chessboard."""
     corners = corners.reshape(-1, 2)
     top_left = corners[0]
     top_right = corners[CHESSBOARD_CORNERS[0] - 1]
@@ -47,12 +91,10 @@ def divide_board(warped: np.ndarray) -> List[np.ndarray]:
 
 def detect_piece(square: np.ndarray, color_image: np.ndarray, square_idx: int, matrix: np.ndarray, frame: np.ndarray) -> Optional[Dict]:
     """Detect and classify a piece in a square."""
-    # Convert square index to board coordinates
     row = square_idx // BOARD_SIZE
     col = square_idx % BOARD_SIZE
     square_size = SQUARE_SIZE
     
-    # Map square back to original image for color analysis
     warped_pts = np.float32([
         [col * square_size, row * square_size],
         [(col + 1) * square_size, row * square_size],
@@ -61,7 +103,6 @@ def detect_piece(square: np.ndarray, color_image: np.ndarray, square_idx: int, m
     ])
     original_pts = cv2.perspectiveTransform(np.array([warped_pts]), np.linalg.inv(matrix))[0]
     
-    # Extract region from original color image
     pts = original_pts.astype(np.int32)
     x_min, y_min = np.min(pts, axis=0)
     x_max, y_max = np.max(pts, axis=0)
@@ -70,25 +111,19 @@ def detect_piece(square: np.ndarray, color_image: np.ndarray, square_idx: int, m
     if color_square.size == 0:
         return None
     
-    # Convert to HSV for color-based detection
     hsv = cv2.cvtColor(color_square, cv2.COLOR_BGR2HSV)
-    
-    # Define color ranges for white and black pieces (adjust based on pieces)
-    white_lower = np.array([0, 0, 150])  # High value for white
+    white_lower = np.array([0, 0, 150])
     white_upper = np.array([180, 50, 255])
-    black_lower = np.array([0, 0, 0])    # Low value for black
+    black_lower = np.array([0, 0, 0])
     black_upper = np.array([180, 255, 100])
     
-    # Create masks for white and black pieces
     white_mask = cv2.inRange(hsv, white_lower, white_upper)
     black_mask = cv2.inRange(hsv, black_lower, black_upper)
     
-    # Find contours in masks
     white_contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     black_contours, _ = cv2.findContours(black_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Check for significant contours
-    min_area = 100  # Minimum contour area to consider as a piece
+    min_area = 100
     piece_info = None
     
     if white_contours:
@@ -109,31 +144,60 @@ def detect_change(prev_squares: List[np.ndarray], curr_squares: List[np.ndarray]
     for i in range(len(prev_squares)):
         diff = cv2.absdiff(prev_squares[i], curr_squares[i])
         mean_diff = np.mean(diff)
-        if mean_diff > 20:  # Threshold for significant change
+        if mean_diff > 20:
             changes.append(i)
     
-    if len(changes) == 2:  # Expect two squares to change (from and to)
+    if len(changes) == 2:
         return changes[0], changes[1]
     return None
 
 def index_to_notation(index: int) -> str:
-    """Convert square index to chess notation (e.g., 0 -> a8, 63 -> h1)."""
+    """Convert square index to chess notation."""
     row = 7 - (index // BOARD_SIZE)
     col = index % BOARD_SIZE
     files = 'abcdefgh'
     return f"{files[col]}{row + 1}"
 
-def process_video(source: str):
-    """Process video feed or clip to detect chess moves and pieces."""
+def download_youtube_video(url: str) -> str:
+    """Download a YouTube video and return the temporary file path."""
+    try:
+        yt = YouTube(url)
+        stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+        if not stream:
+            raise ValueError("No suitable MP4 stream found.")
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, f"youtube_chess_{yt.video_id}.mp4")
+        stream.download(output_path=temp_dir, filename=f"youtube_chess_{yt.video_id}.mp4")
+        print(f"Downloaded YouTube video to: {temp_file}")
+        return temp_file
+    except Exception as e:
+        print(f"Error downloading YouTube video: {e}")
+        return ""
+
+def process_video(source: str, is_youtube: bool = False, debug_dir: str = "debug_frames", manual_roi: Optional[List[int]] = None):
+    """Process video feed, local file, or YouTube video to detect chess moves and pieces."""
+    temp_file = None
+    if is_youtube:
+        temp_file = download_youtube_video(source)
+        if not temp_file or not os.path.exists(temp_file):
+            print("Failed to download YouTube video.")
+            return
+        source = temp_file
+
     cap = cv2.VideoCapture(source if source else 0)
     if not cap.isOpened():
         print(f"Error: Could not open video source: {source or 'webcam'}")
+        if temp_file and os.path.exists(temp_file):
+            os.remove(temp_file)
         return
+
+    os.makedirs(debug_dir, exist_ok=True)
+    frame_count = 0
 
     prev_squares = None
     prev_frame = None
     matrix = None
-    board_state = [None] * (BOARD_SIZE * BOARD_SIZE)  # Track piece in each square
+    board_state = [None] * (BOARD_SIZE * BOARD_SIZE)
 
     while True:
         ret, frame = cap.read()
@@ -141,25 +205,33 @@ def process_video(source: str):
             print("End of video or error reading frame.")
             break
 
-        # Find chessboard corners
-        corners, gray = find_chessboard_corners(frame)
+        # Detect ROI
+        roi = manual_roi
+        if not roi:
+            roi = find_chessboard_region(frame)
+        
+        if roi:
+            x, y, w, h = roi
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)  # Draw ROI
+            roi_frame = frame[y:y+h, x:x+w]
+            debug_roi_path = os.path.join(debug_dir, f"roi_frame_{frame_count}.jpg")
+            cv2.imwrite(debug_roi_path, roi_frame)
+            print(f"Saved ROI debug frame: {debug_roi_path}")
+        else:
+            roi_frame = frame
+            print(f"Frame {frame_count}: Could not detect chessboard region.")
+
+        corners, gray = find_chessboard_corners(frame, roi)
         if corners is not None:
-            # Draw corners for visualization
             cv2.drawChessboardCorners(frame, CHESSBOARD_CORNERS, corners, True)
-            
-            # Get perspective transform
             matrix = get_perspective_transform(corners)
             warped = cv2.warpPerspective(gray, matrix, (SQUARE_SIZE * BOARD_SIZE, SQUARE_SIZE * BOARD_SIZE))
-            
-            # Divide into squares
             curr_squares = divide_board(warped)
 
-            # Detect pieces in each square
             for i in range(len(curr_squares)):
                 piece_info = detect_piece(curr_squares[i], frame, i, matrix, frame)
                 board_state[i] = piece_info
 
-            # Detect changes if previous frame exists
             if prev_squares is not None:
                 change = detect_change(prev_squares, curr_squares)
                 if change:
@@ -172,30 +244,38 @@ def process_video(source: str):
             prev_squares = curr_squares
             prev_frame = gray.copy()
 
-            # Display board state (for debugging)
             for i, piece in enumerate(board_state):
                 if piece:
                     pos = index_to_notation(i)
                     print(f"Square {pos}: {piece['color']} {piece['type']}")
+        else:
+            print(f"Frame {frame_count}: Chessboard not detected.")
+            debug_path = os.path.join(debug_dir, f"frame_{frame_count}.jpg")
+            cv2.imwrite(debug_path, frame)
+            print(f"Saved debug frame: {debug_path}")
 
-        # Display the frame
         cv2.imshow('Chessboard', frame)
-        
-        # Exit on 'q' key
+        frame_count += 1
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
+    if temp_file and os.path.exists(temp_file):
+        os.remove(temp_file)
 
 def main():
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Detect chess moves and pieces from video feed or clip.")
-    parser.add_argument("--video", type=str, default="", help="Path to video clip (leave empty for webcam).")
+    parser = argparse.ArgumentParser(description="Detect chess moves and pieces from video feed, local file, or YouTube.")
+    parser.add_argument("--video", type=str, default="", help="Path to local video file (leave empty for webcam).")
+    parser.add_argument("--youtube", type=str, default="", help="YouTube video URL.")
+    parser.add_argument("--debug-dir", type=str, default="debug_frames", help="Directory to save debug frames.")
+    parser.add_argument("--roi", type=int, nargs=4, help="Manual ROI coordinates [x, y, width, height].")
     args = parser.parse_args()
 
-    # Process video source (webcam or video file)
-    process_video(args.video)
+    if args.youtube:
+        process_video(args.youtube, is_youtube=True, debug_dir=args.debug_dir, manual_roi=args.roi)
+    else:
+        process_video(args.video, is_youtube=False, debug_dir=args.debug_dir, manual_roi=args.roi)
 
 if __name__ == "__main__":
     main()
