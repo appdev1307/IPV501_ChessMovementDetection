@@ -3,3 +3,16 @@ python download_youtube_video.py --url https://www.youtube.com/watch?v=VIDEO_ID 
 
 pip install yt-dlp
 yt-dlp "https://www.youtube.com/watch?v=8neNxAjdDTI" -o /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/video.mp4
+
+
+test case 1: python chess_move_detector.py --video /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/video.mp4.mkv
+
+
+test case 2: 
+python chess_move_detector.py --image /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/ChessBoard_Test.png --debug-dir /Users/macintoshhd/Downloads/MSE24/2025_semester_02/Digital_Image_and_Video_Processing/Group_Exercise/debug_frames
+
+
+
+python chess_move_chatgpt.py
+
+python create_FEN_images.py
