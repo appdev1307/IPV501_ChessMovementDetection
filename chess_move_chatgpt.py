@@ -54,67 +54,80 @@ def extract_digital_board(image, debug=False):
 def load_templates(template_dir="templates"):
     pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
     templates = {}
+    os.makedirs('./debug_frames', exist_ok=True)
+
     for p in pieces:
-        img = cv2.imread(os.path.join(template_dir, f"{p}.png"), cv2.IMREAD_GRAYSCALE)
+        img_path = os.path.join(template_dir, f"{p}.png")
+        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)  # Load with alpha if present
+
         if img is None:
-            raise ValueError(f"Template for {p} not found.")
-        print(f"{p}.png loaded")
-        templates[p] = cv2.resize(img, (68, 68))
+            raise ValueError(f"Template for {p} not found at {img_path}")
+
+        # If image has alpha channel (RGBA), use it to mask the piece
+        if img.shape[2] == 4:
+            bgr, alpha = img[:, :, :3], img[:, :, 3]
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            mask = cv2.threshold(alpha, 0, 255, cv2.THRESH_BINARY)[1]
+        else:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
+        # Find the largest contour – assumed to be the piece
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            raise ValueError(f"No contour found for {p}")
+        c = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(c)
+
+        # Crop to the piece region and resize
+        piece_crop = gray[y:y+h, x:x+w]
+        piece_resized = cv2.resize(piece_crop, (68, 68))
+
+        # Final thresholding to make it binary
+        _, final_template = cv2.threshold(piece_resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        templates[p] = final_template
+
+        # Optional debug output
+        cv2.imwrite(f'./debug_frames/template_clean_{p}.png', final_template)
+        print(f"✔ Processed template: {p}")
+
     return templates
 
-def match_piece(square_img, img_name, templates, threshold=0.3):
-    if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
-        print("Warning: Empty square image passed to match_piece")
+
+
+def match_piece(square_img, img_name, templates, threshold=0.6):
+    if square_img.size == 0:
+        print("Warning: Empty square image.")
         return None
 
-    # Check number of channels
-    if len(square_img.shape) == 2 or square_img.shape[2] == 1:
-        # Already grayscale
-        square_gray = square_img
-    else:
-        # Convert BGR to grayscale
-        square_gray = cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)    
-        
+    square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
     square_resized = cv2.resize(square_gray, (68, 68))
+    
+    # Preprocess with thresholding to reduce background influence
+    _, square_thresh = cv2.threshold(square_resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
     max_val = 0
     best_match = None
     for piece, template in templates.items():
-        #print(f"match_piece: template={piece}, shape={template.shape}, "
-        #      f"channels={1 if len(template.shape) == 2 else template.shape[2]}, "
-        #      f"dtype={template.dtype}")
-        
-        #if piece == list(templates.keys())[0]:
-        #    cv2.imwrite('./debug_frames/template_sample.png', template)
-        
-        if template.shape[0] > square_resized.shape[0] or template.shape[1] > square_resized.shape[1]:
-            print(f"Warning: Template {piece} too large: template={template.shape}, square_resized={square_resized.shape}")
-            continue
-        if (len(template.shape) == 2) != (len(square_resized.shape) == 2):
-            print(f"Warning: Channel mismatch for {piece}: template channels={1 if len(template.shape) == 2 else template.shape[2]}, "
-                  f"square_resized channels={1 if len(square_resized.shape) == 2 else square_resized.shape[2]}")
-            continue
-        if template.dtype != square_resized.dtype:
-            print(f"Warning: Dtype mismatch for {piece}: template={template.dtype}, square_resized={square_resized.dtype}")
-            continue
-        
         try:
-            res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
+            res = cv2.matchTemplate(square_thresh, template, cv2.TM_CCOEFF_NORMED)
             _, val, _, _ = cv2.minMaxLoc(res)
             if val > max_val:
                 max_val = val
                 best_match = piece
-                #print(f"matched: template={best_match}, max_val={max_val:.4f}")
+                # Save debug match image
+                debug_vis = cv2.hconcat([square_thresh, template])
+                cv2.imwrite(f'./debug_frames/match_{img_name}_{piece}_{val:.2f}.png', debug_vis)
         except cv2.error as e:
-            print(f"Error in matchTemplate for {piece}: {e}")
-            continue
-    
-    
+            print(f"Error matching {piece}: {e}")
 
     if max_val >= threshold:
-        print(f"{img_name} matched: template={best_match}, max_val={max_val:.4f}")
+        print(f"{img_name} matched: {best_match}, confidence={max_val:.3f}")
         return best_match
     else:
-        return None        
+        print(f"{img_name} no match. Best: {best_match}, confidence={max_val:.3f}")
+        return None
 
 def warp_board(crop, points):
     rect = order_points(points)
