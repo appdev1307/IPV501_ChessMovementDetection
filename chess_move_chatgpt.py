@@ -59,10 +59,10 @@ def load_templates(template_dir="templates"):
         if img is None:
             raise ValueError(f"Template for {p} not found.")
         print(f"{p}.png loaded")
-        templates[p] = cv2.resize(img, (50, 50))
+        templates[p] = cv2.resize(img, (68, 68))
     return templates
 
-def match_piece(square_img, templates, threshold=0.7):
+def match_piece(square_img, img_name, templates, threshold=0.3):
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         print("Warning: Empty square image passed to match_piece")
         return None
@@ -75,18 +75,43 @@ def match_piece(square_img, templates, threshold=0.7):
         # Convert BGR to grayscale
         square_gray = cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)    
         
-    square_resized = cv2.resize(square_gray, (50, 50))
+    square_resized = cv2.resize(square_gray, (68, 68))
     max_val = 0
     best_match = None
     for piece, template in templates.items():
-        res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
-        _, val, _, _ = cv2.minMaxLoc(res)
-        if val > max_val:
-            max_val = val
-            best_match = piece
+        #print(f"match_piece: template={piece}, shape={template.shape}, "
+        #      f"channels={1 if len(template.shape) == 2 else template.shape[2]}, "
+        #      f"dtype={template.dtype}")
+        
+        #if piece == list(templates.keys())[0]:
+        #    cv2.imwrite('./debug_frames/template_sample.png', template)
+        
+        if template.shape[0] > square_resized.shape[0] or template.shape[1] > square_resized.shape[1]:
+            print(f"Warning: Template {piece} too large: template={template.shape}, square_resized={square_resized.shape}")
+            continue
+        if (len(template.shape) == 2) != (len(square_resized.shape) == 2):
+            print(f"Warning: Channel mismatch for {piece}: template channels={1 if len(template.shape) == 2 else template.shape[2]}, "
+                  f"square_resized channels={1 if len(square_resized.shape) == 2 else square_resized.shape[2]}")
+            continue
+        if template.dtype != square_resized.dtype:
+            print(f"Warning: Dtype mismatch for {piece}: template={template.dtype}, square_resized={square_resized.dtype}")
+            continue
+        
+        try:
+            res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
+            _, val, _, _ = cv2.minMaxLoc(res)
+            if val > max_val:
+                max_val = val
+                best_match = piece
+                #print(f"matched: template={best_match}, max_val={max_val:.4f}")
+        except cv2.error as e:
+            print(f"Error in matchTemplate for {piece}: {e}")
+            continue
+    
+    
 
     if max_val >= threshold:
-        print(f"{best_match} best match")
+        print(f"{img_name} matched: template={best_match}, max_val={max_val:.4f}")
         return best_match
     else:
         return None        
@@ -112,6 +137,7 @@ def warp_board(crop, points):
 
 def split_into_squares(board_img):
     squares = []
+    square_names = []
     height, width = board_img.shape[:2]
     #dy, dx = height // 8, width // 8
     dy, dx = 69, 69
@@ -119,26 +145,18 @@ def split_into_squares(board_img):
         for col in range(8):
             square = board_img[row*dy:(row+1)*dy, col*dx:(col+1)*dx]
             squares.append(square)
+            square_names.append(f'square_r{row}_c{col}.png')
             cv2.imwrite(f'./debug_frames/square_r{row}_c{col}.png', square)
-    return squares
+    return squares, square_names
 
-def generate_fen(squares, templates):
+def generate_fen(squares, square_names, templates):
     fen_rows = []
-    for row in squares:
-        fen_row = ''
-        empty = 0
-        for square in row:
-            piece = match_piece(square, templates)
-            if piece:
-                if empty:
-                    fen_row += str(empty)
-                    empty = 0
-                fen_row += piece
-            else:
-                empty += 1
-        if empty:
-            fen_row += str(empty)
-        fen_rows.append(fen_row)
+    i = 0
+    for piece in squares:
+        #print(f'squares  {square_names[i]}')
+        piece = match_piece(piece, square_names[i], templates)
+        i = i + 1
+    
     return '/'.join(fen_rows)
 
 def main():
@@ -161,9 +179,9 @@ def main():
         os.makedirs('./debug_frames', exist_ok=True)
         cv2.imwrite('./debug_frames/warped_board.png', board)
         
-        squares = split_into_squares(board)
+        squares, square_names = split_into_squares(board)
         templates = load_templates("templates")
-        fen = generate_fen(squares, templates)
+        fen = generate_fen(squares, square_names,templates)
         print("Generated FEN:", fen)
         
         plt.ion()
