@@ -181,19 +181,50 @@ def warp_board(crop, points):
         raise ValueError("Warped image is empty or invalid")
     return warped
 
-def split_into_squares(board_img):
+def split_into_squares(board_img, debug_dir="./debug_frames"):
+    import cv2
+    import numpy as np
+    import os
+
+    os.makedirs(debug_dir, exist_ok=True)
+
     squares = []
     square_names = []
+
     height, width = board_img.shape[:2]
-    #dy, dx = height // 8, width // 8
-    dy, dx = 69, 69
+    dy, dx = 69, 69  # Square size
+
     for row in range(8):
         for col in range(8):
             square = board_img[row*dy:(row+1)*dy, col*dx:(col+1)*dx]
-            squares.append(square)
-            square_names.append(f'square_r{row}_c{col}.png')
-            cv2.imwrite(f'./debug_frames/square_r{row}_c{col}.png', square)
+
+            # Handle alpha if present
+            if square.shape[2] == 4:
+                bgr = square[:, :, :3]
+                alpha = square[:, :, 3]
+                mask = cv2.threshold(alpha, 0, 255, cv2.THRESH_BINARY)[1]
+                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY)
+                # Adaptive threshold for better separation of piece vs background
+                mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                             cv2.THRESH_BINARY_INV, 15, 5)
+
+            # Force clean white background
+            white_bg = np.full_like(gray, 255)
+            piece_on_white = np.where(mask == 255, gray, white_bg)
+
+            # Resize to 68x68
+            resized = cv2.resize(piece_on_white, (68, 68))
+
+            name = f'square_r{row}_c{col}.png'
+            cv2.imwrite(os.path.join(debug_dir, name), resized)
+
+            squares.append(resized)
+            square_names.append(name)
+
     return squares, square_names
+
 
 def generate_fen(squares, square_names, templates):
     fen_rows = []
