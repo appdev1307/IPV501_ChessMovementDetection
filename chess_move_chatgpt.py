@@ -51,7 +51,7 @@ def extract_digital_board(image, debug=False):
     print("No valid board contour found")
     return crop, None
 
-def load_templates(template_dir="templates"):
+def load_templates(template_dir="templates", debug_dir="debug_output"):
     import cv2
     import numpy as np
     import os
@@ -59,39 +59,55 @@ def load_templates(template_dir="templates"):
     pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
     templates = {}
 
+    os.makedirs(debug_dir, exist_ok=True)
+
     for p in pieces:
         path = os.path.join(template_dir, f"{p}.png")
-        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(path)
 
         if img is None:
             raise ValueError(f"Template for {p} not found at {path}")
-        
-        # Handle alpha channel
-        if img.shape[2] == 4:
-            bgr = img[:, :, :3]
-            alpha = img[:, :, 3]
-            mask = cv2.threshold(alpha, 0, 255, cv2.THRESH_BINARY)[1]
-            img_gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        else:
-            img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            _, mask = cv2.threshold(img_gray, 200, 255, cv2.THRESH_BINARY_INV)
 
-        # Create white background image
-        white_bg = np.full_like(img_gray, 255)
+        # Convert to HSV and extract dark pixels
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lower = np.array([0, 0, 0])
+        upper = np.array([180, 255, 80])
+        mask = cv2.inRange(hsv, lower, upper)
 
-        # Combine piece with white background using mask
-        piece_on_white = np.where(mask == 255, img_gray, white_bg)
+        # Close gaps
+        kernel = np.ones((3, 3), np.uint8)
+        mask_clean = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-        # Resize to standard 68x68
-        resized = cv2.resize(piece_on_white, (68, 68))
+        # Grayscale image
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        white_bg = np.full_like(gray, 255)
+        piece_on_white = np.where(mask_clean == 255, gray, white_bg)
+
+        # Find contours from mask
+        contours, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Draw white 1px border around contour on result
+        bordered = piece_on_white.copy()
+        cv2.drawContours(bordered, contours, -1, color=255, thickness=1)
+
+        # Resize
+        resized = cv2.resize(bordered, (68, 68))
         templates[p] = resized
 
-        print(f"Loaded and white-backgrounded: {p}.png")
+        # Debug output
+        cv2.imwrite(os.path.join(debug_dir, f"{p}_original.png"), img)
+        cv2.imwrite(os.path.join(debug_dir, f"{p}_gray.png"), gray)
+        cv2.imwrite(os.path.join(debug_dir, f"{p}_mask.png"), mask_clean)
+        cv2.imwrite(os.path.join(debug_dir, f"{p}_white_bg.png"), piece_on_white)
+        cv2.imwrite(os.path.join(debug_dir, f"{p}_bordered.png"), bordered)
+        cv2.imwrite(os.path.join(debug_dir, f"{p}_resized.png"), resized)
+
+        print(f"[DEBUG] Final clean border version: {p}.png")
 
     return templates
 
 
-def match_piece(square_img, img_name, templates, threshold=0.3):
+def match_piece(square_img, img_name, templates, threshold=0.5):
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         print("Warning: Empty square image passed to match_piece")
         return None
