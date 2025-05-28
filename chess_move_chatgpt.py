@@ -3,17 +3,20 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 def order_points(pts):
-    #if len(pts) != 4:
-    #    raise ValueError("Exactly 4 points are required")
+    """Order four points to form a rectangle: top-left, top-right, bottom-right, bottom-left."""
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
     diff = np.diff(pts, axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
+    rect[0] = pts[np.argmin(s)]  # Top-left: min sum
+    rect[2] = pts[np.argmax(s)]  # Bottom-right: max sum
+    rect[1] = pts[np.argmin(diff)]  # Top-right: min diff
+    rect[3] = pts[np.argmax(diff)]  # Bottom-left: max diff
     return rect
 
 def extract_digital_board(image, debug=False):
@@ -45,97 +48,63 @@ def extract_digital_board(image, debug=False):
         if len(approx) >= 4 and cv2.contourArea(c) > 5000:
             points = approx.reshape(-1, 2)
             print(f"Detected points: {points}")
-            # if len(points) == 4: to be checked why it has more than 4
             return crop, points                        
     
     print("No valid board contour found")
     return crop, None
 
-def load_templates(template_dir="templates", debug_dir="debug_output"):
-    import cv2
-    import numpy as np
-    import os
-
+def load_templates(template_dir="templates", debug_dir="debug_output", debug=False):
+    """Load and preprocess chess piece templates."""
     pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
     templates = {}
-
     os.makedirs(debug_dir, exist_ok=True)
 
     for p in pieces:
         path = os.path.join(template_dir, f"{p}.png")
         img = cv2.imread(path)
-
         if img is None:
+            logging.error(f"Template for {p} not found at {path}")
             raise ValueError(f"Template for {p} not found at {path}")
 
-        # Convert to HSV and extract dark pixels
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower = np.array([0, 0, 0])
         upper = np.array([180, 255, 80])
         mask = cv2.inRange(hsv, lower, upper)
-
-        # Close gaps
         kernel = np.ones((3, 3), np.uint8)
         mask_clean = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-        # Grayscale image
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         white_bg = np.full_like(gray, 255)
         piece_on_white = np.where(mask_clean == 255, gray, white_bg)
-
-        # Find contours from mask
         contours, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Draw white 1px border around contour on result
         bordered = piece_on_white.copy()
         cv2.drawContours(bordered, contours, -1, color=255, thickness=1)
-
-        # Resize
         resized = cv2.resize(bordered, (68, 68))
         templates[p] = resized
 
-        # Debug output
-        cv2.imwrite(os.path.join(debug_dir, f"{p}_original.png"), img)
-        cv2.imwrite(os.path.join(debug_dir, f"{p}_gray.png"), gray)
-        cv2.imwrite(os.path.join(debug_dir, f"{p}_mask.png"), mask_clean)
-        cv2.imwrite(os.path.join(debug_dir, f"{p}_white_bg.png"), piece_on_white)
-        cv2.imwrite(os.path.join(debug_dir, f"{p}_bordered.png"), bordered)
-        cv2.imwrite(os.path.join(debug_dir, f"{p}_resized.png"), resized)
-
-        print(f"[DEBUG] Final clean border version: {p}.png")
+        if debug:
+            cv2.imwrite(os.path.join(debug_dir, f"{p}_original.png"), img)
+            cv2.imwrite(os.path.join(debug_dir, f"{p}_mask.png"), mask_clean)
+            cv2.imwrite(os.path.join(debug_dir, f"{p}_resized.png"), resized)
+            logging.info(f"Saved debug images for template {p}")
 
     return templates
 
-
-def match_piece(square_img, img_name, templates, threshold=0.5):
+def match_piece(square_img, img_name, templates, threshold=0.3, debug=False):
+    """Match a chess piece in a square to a template with lower threshold for debugging."""
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
-        print("Warning: Empty square image passed to match_piece")
+        logging.warning(f"Empty square image: {img_name}")
         return None
 
-    # Convert to grayscale
-    if len(square_img.shape) == 2 or square_img.shape[2] == 1:
-        square_gray = square_img
-    else:
-        square_gray = cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
-
-    # Threshold to create mask (foreground: piece)
+    square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
     _, mask = cv2.threshold(square_gray, 200, 255, cv2.THRESH_BINARY_INV)
-
-    # Replace background with white
     white_bg = np.full_like(square_gray, 255)
     square_clean = np.where(mask == 255, square_gray, white_bg)
-
-    # Resize for template matching
     square_resized = cv2.resize(square_clean, (68, 68))
 
     max_val = 0
     best_match = None
 
     for piece, template in templates.items():
-        if template.shape != square_resized.shape:
-            print(f"Shape mismatch for {piece}")
-            continue
-
         try:
             res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
             _, val, _, _ = cv2.minMaxLoc(res)
@@ -143,132 +112,137 @@ def match_piece(square_img, img_name, templates, threshold=0.5):
                 max_val = val
                 best_match = piece
         except cv2.error as e:
-            print(f"matchTemplate error for {piece}: {e}")
+            logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
             continue
 
+    logging.info(f"{img_name} match result: best={best_match}, score={max_val:.4f}")
     if max_val >= threshold:
-        print(f"{img_name} matched: template={best_match}, max_val={max_val:.4f}")
-
-        # Debug image generation
-        os.makedirs('./debug_frames/match', exist_ok=True)
-        vis = np.hstack([square_resized, templates[best_match]])
-        vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
-        cv2.putText(vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        cv2.imwrite(f'./debug_frames/match/{img_name}_match.png', vis_bgr)
-
+        if debug:
+            os.makedirs('./debug_frames/match', exist_ok=True)
+            vis = np.hstack([square_resized, templates[best_match]])
+            vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+            cv2.putText(vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            cv2.imwrite(f'./debug_frames/match/{img_name}_match.png', vis_bgr)
         return best_match
-    else:
-        return None
-
+    return None
 
 def warp_board(crop, points):
+    """Warp the chessboard to a top-down view with size validation."""
     rect = order_points(points)
     (tl, tr, br, bl) = rect
     width = int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl)))
     height = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
     if width < 8 or height < 8:
         raise ValueError(f"Warped image too small: {width}x{height}")
-    dst = np.array([
-        [0, 0],
-        [width - 1, 0],
-        [width - 1, height - 1],
-        [0, height - 1]
-    ], dtype="float32")
+    dst = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype="float32")
     M = cv2.getPerspectiveTransform(rect, dst)
     warped = cv2.warpPerspective(crop, M, (width, height))
     if warped.size == 0 or warped.shape[0] == 0 or warped.shape[1] == 0:
         raise ValueError("Warped image is empty or invalid")
+    expected_size = 552  # 8 * 69
+    if abs(width - expected_size) > 50 or abs(height - expected_size) > 50:
+        logging.warning(f"Warped board size {width}x{height} deviates from expected {expected_size}x{expected_size}")
     return warped
 
 def split_into_squares(board_img, debug_dir="./debug_frames"):
-    import cv2
-    import numpy as np
-    import os
-
+    """Split the warped board into 64 squares of fixed 69x69 size with padding."""
     os.makedirs(debug_dir, exist_ok=True)
-
     squares = []
     square_names = []
-
     height, width = board_img.shape[:2]
-    dy, dx = 69, 69  # Square size
+    dy, dx = 69, 69  # Fixed square size
+
+    # Validate board size and add padding if needed
+    if height < 8 * dy or width < 8 * dx:
+        logging.warning(f"Warped board too small for 69x69 squares: {width}x{height}, need at least {8*dx}x{8*dy}")
+        # Pad with black if necessary (simple approach)
+        top_pad = max(0, 8 * dy - height)
+        left_pad = max(0, 8 * dx - width)
+        if top_pad > 0 or left_pad > 0:
+            board_img = cv2.copyMakeBorder(board_img, 0, top_pad, 0, left_pad, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+            height, width = board_img.shape[:2]
+            logging.info(f"Padded board to {width}x{height}")
 
     for row in range(8):
         for col in range(8):
-            square = board_img[row*dy:(row+1)*dy, col*dx:(col+1)*dx]
-
-            # Handle alpha if present
-            if square.shape[2] == 4:
-                bgr = square[:, :, :3]
-                alpha = square[:, :, 3]
-                mask = cv2.threshold(alpha, 0, 255, cv2.THRESH_BINARY)[1]
-                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-            else:
-                gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY)
-                # Adaptive threshold for better separation of piece vs background
-                mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                             cv2.THRESH_BINARY_INV, 15, 5)
-
-            # Force clean white background
+            y_start, y_end = row * dy, (row + 1) * dy
+            x_start, x_end = col * dx, (col + 1) * dx
+            square = board_img[y_start:y_end, x_start:x_end]
+            if square.size == 0 or square.shape[0] < dy or square.shape[1] < dx:
+                logging.warning(f"Empty or undersized square at row {row}, col {col}")
+                continue
+            gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
+            mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                        cv2.THRESH_BINARY_INV, 15, 5)
             white_bg = np.full_like(gray, 255)
             piece_on_white = np.where(mask == 255, gray, white_bg)
-
-            # Resize to 68x68
             resized = cv2.resize(piece_on_white, (68, 68))
-
             name = f'square_r{row}_c{col}.png'
             cv2.imwrite(os.path.join(debug_dir, name), resized)
-
             squares.append(resized)
             square_names.append(name)
-
     return squares, square_names
 
+def generate_fen(squares, square_names, templates, debug=False):
+    """Generate FEN string from detected pieces."""
+    board = [['' for _ in range(8)] for _ in range(8)]
+    fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
+               'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
 
-def generate_fen(squares, square_names, templates):
+    for i, (square, name) in enumerate(zip(squares, square_names)):
+        row, col = i // 8, i % 8
+        piece = match_piece(square, name, templates, debug=debug)
+        board[row][col] = fen_map.get(piece, '') if piece else ''
+
     fen_rows = []
-    i = 0
-    for piece in squares:
-        #print(f'squares  {square_names[i]}')
-        piece = match_piece(piece, square_names[i], templates)
-        i = i + 1
-    
-    return '/'.join(fen_rows)
+    for row in board:
+        empty = 0
+        fen_row = ''
+        for square in row:
+            if square == '':
+                empty += 1
+            else:
+                if empty > 0:
+                    fen_row += str(empty)
+                    empty = 0
+                fen_row += square
+        if empty > 0:
+            fen_row += str(empty)
+        fen_rows.append(fen_row)
+
+    fen = '/'.join(fen_rows) + ' w KQkq - 0 1'  # Simplified FEN
+    return fen
 
 def main():
     image_path = "./ChessBoard_Test.png"
     image = cv2.imread(image_path)
     if image is None:
-        print(f"Error: Cannot load image at {image_path}")
+        logging.error(f"Cannot load image at {image_path}")
         return
-    print(f"Input image shape: {image.shape}")
-    
+    logging.info(f"Input image shape: {image.shape}")
+
     try:
         crop, points = extract_digital_board(image, debug=True)
         if points is None:
-            print("❌ Digital chess board not detected.")
+            logging.error("Digital chessboard not detected")
             return
-        
-        print(f"Warping board with points: {points}")
+
+        logging.info(f"Warping board with points: {points}")
         board = warp_board(crop, points)
-        print(f"Warped board shape: {board.shape}")
+        logging.info(f"Warped board shape: {board.shape}")
         os.makedirs('./debug_frames', exist_ok=True)
         cv2.imwrite('./debug_frames/warped_board.png', board)
-        
+
         squares, square_names = split_into_squares(board)
-        templates = load_templates("templates")
-        fen = generate_fen(squares, square_names,templates)
-        print("Generated FEN:", fen)
-        
-        plt.ion()
-        plt.imshow(cv2.cvtColor(board, cv2.COLOR_BGR2RGB))
-        plt.title("Top-down Digital Chess Board")
-        plt.axis("off")
-        plt.savefig('./debug_frames/FEN.png')
-        plt.close()
+        templates = load_templates("templates", debug_dir="debug_output", debug=True)
+        fen = generate_fen(squares, square_names, templates, debug=True)
+        logging.info(f"Generated FEN: {fen}")
+
+        # Save final board visualization
+        cv2.imwrite('./debug_frames/final_board.png', board)
     except ValueError as e:
-        print(f"Error during processing: {e}")
+        logging.error(f"Processing error: {e}")
 
 if __name__ == "__main__":
     main()
