@@ -183,11 +183,11 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
                 logging.warning(f"Empty or undersized square at row {row}, col {col}")
                 continue
             gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
-            mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                        cv2.THRESH_BINARY_INV, 15, 5)
-            white_bg = np.full_like(gray, 255)
-            piece_on_white = np.where(mask == 255, gray, white_bg)
-            resized = cv2.resize(piece_on_white, (68, 68))
+            #mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+            #                            cv2.THRESH_BINARY_INV, 15, 5)
+            #white_bg = np.full_like(gray, 255)
+            #piece_on_white = np.where(mask == 255, gray, white_bg)
+            resized = cv2.resize(gray, (68, 68))
             name = f'square_r{row}_c{col}.png'
             cv2.imwrite(os.path.join(debug_dir, name), resized)
             squares.append(resized)
