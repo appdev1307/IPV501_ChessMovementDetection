@@ -27,8 +27,17 @@ def extract_digital_board(image, debug=False):
         raise ValueError("Cropped image is empty")
     
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-    sharpened = cv2.filter2D(gray, -1, np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]]))
-    blurred = cv2.GaussianBlur(sharpened, (5, 5), 0)
+    #sharpened = cv2.filter2D(gray, -1, np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]]))
+
+    # Define sharpening kernel
+    kernel = np.array([[-1, -1, -1],
+                       [-1,  9, -1],
+                       [-1, -1, -1]])
+
+    # Apply filter
+    #sharpened = cv2.filter2D(gray, -1, kernel)
+
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 30, 120)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
@@ -89,7 +98,7 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
 
     return templates
 
-def match_piece(square_img, img_name, templates, threshold=0.3, debug=False):
+def match_piece(square_img, img_name, templates, threshold=0.5, debug=False):
     """Match a chess piece in a square to a template with lower threshold for debugging."""
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
@@ -115,7 +124,7 @@ def match_piece(square_img, img_name, templates, threshold=0.3, debug=False):
             logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
             continue
 
-    logging.info(f"{img_name} match result: best={best_match}, score={max_val:.4f}")
+    #logging.info(f"{img_name} match result: best={best_match}, score={max_val:.4f}")
     if max_val >= threshold:
         if debug:
             os.makedirs('./debug_frames/match', exist_ok=True)
@@ -128,22 +137,23 @@ def match_piece(square_img, img_name, templates, threshold=0.3, debug=False):
     return None
 
 def warp_board(crop, points):
-    """Warp the chessboard to a top-down view with size validation."""
+    """Warp the chessboard to a fixed 552x552 top-down view (8x8 squares of 69x69)."""
     rect = order_points(points)
-    (tl, tr, br, bl) = rect
-    width = int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl)))
-    height = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
-    if width < 8 or height < 8:
-        raise ValueError(f"Warped image too small: {width}x{height}")
-    dst = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype="float32")
+    dst = np.array([
+        [0, 0],
+        [551, 0],
+        [551, 551],
+        [0, 551]
+    ], dtype="float32")
+
     M = cv2.getPerspectiveTransform(rect, dst)
-    warped = cv2.warpPerspective(crop, M, (width, height))
+    warped = cv2.warpPerspective(crop, M, (552, 552))
+
     if warped.size == 0 or warped.shape[0] == 0 or warped.shape[1] == 0:
         raise ValueError("Warped image is empty or invalid")
-    expected_size = 552  # 8 * 69
-    if abs(width - expected_size) > 50 or abs(height - expected_size) > 50:
-        logging.warning(f"Warped board size {width}x{height} deviates from expected {expected_size}x{expected_size}")
+
     return warped
+
 
 def split_into_squares(board_img, debug_dir="./debug_frames"):
     """Split the warped board into 64 squares of fixed 69x69 size with padding."""
@@ -223,13 +233,17 @@ def main():
     logging.info(f"Input image shape: {image.shape}")
 
     try:
-        crop, points = extract_digital_board(image, debug=True)
-        if points is None:
-            logging.error("Digital chessboard not detected")
-            return
+        # Instead of auto-detecting, use fixed points
+        fixed_points = np.array([
+            [1221, 247],  # Top-left
+            [1774, 247],  # Top-right
+            [1774, 803],  # Bottom-right
+            [1221, 803]   # Bottom-left
+        ], dtype="float32")
 
-        logging.info(f"Warping board with points: {points}")
-        board = warp_board(crop, points)
+        crop = image  # Use full image since we now use fixed coordinates
+        logging.info(f"Warping board with fixed points: {fixed_points.tolist()}")
+        board = warp_board(crop, fixed_points)
         logging.info(f"Warped board shape: {board.shape}")
         os.makedirs('./debug_frames', exist_ok=True)
         cv2.imwrite('./debug_frames/warped_board.png', board)
@@ -241,8 +255,10 @@ def main():
 
         # Save final board visualization
         cv2.imwrite('./debug_frames/final_board.png', board)
+
     except ValueError as e:
         logging.error(f"Processing error: {e}")
+
 
 if __name__ == "__main__":
     main()
