@@ -81,7 +81,7 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
 
     return templates
 
-def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
+def match_piece(square_img, img_name, templates, threshold=0.4, debug=False):
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
         return None
