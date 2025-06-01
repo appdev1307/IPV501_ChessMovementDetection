@@ -154,7 +154,7 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
 
     return templates
 
-def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
+def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug=False):
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
         return None
@@ -165,11 +165,19 @@ def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
 
     max_val = 0
     best_match = None
+    debug_frames = []
 
     for piece, template in templates.items():
         try:
             res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
             _, val, _, _ = cv2.minMaxLoc(res)
+            if debug:
+                # Create debug image for each template comparison
+                vis = np.hstack([square_resized, template])
+                vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+                cv2.putText(vis_bgr, f"Piece: {piece} Score: {val:.2f}", (5, 64),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                debug_frames.append(vis_bgr)
             if val > max_val:
                 max_val = val
                 best_match = piece
@@ -179,13 +187,19 @@ def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
 
     if max_val >= threshold:
         if debug:
-            os.makedirs('./debug_frames/match', exist_ok=True)
-            vis = np.hstack([square_resized, templates[best_match]])
-            vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
-            cv2.putText(vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
+            # Save debug images for all comparisons in a frame-specific directory
+            frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
+            os.makedirs(frame_debug_dir, exist_ok=True)
+            for idx, debug_img in enumerate(debug_frames):
+                piece_name = list(templates.keys())[idx]
+            #    cv2.imwrite(f'{frame_debug_dir}/{img_name}_match_{piece_name}.png', debug_img)
+            # Save the best match image separately
+            best_vis = np.hstack([square_resized, templates[best_match]])
+            best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
+            cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            cv2.imwrite(f'./debug_frames/match/{img_name}_match.png', vis_bgr)
-            match_result.append(f"{img_name} match ={best_match}")
+            cv2.imwrite(f'{frame_debug_dir}/{img_name}_best_match.png', best_vis_bgr)
+            match_result.append(f"{img_name} match = {best_match}")
         return best_match
     return None
 
@@ -236,14 +250,14 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
             square_names.append(name)
     return squares, square_names
 
-def generate_fen(squares, square_names, templates, debug=False):
+def generate_fen(squares, square_names, templates, frame_idx, debug=False):
     board = [['' for _ in range(8)] for _ in range(8)]
     fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
                'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
 
     for i, (square, name) in enumerate(zip(squares, square_names)):
         row, col = i // 8, i % 8
-        piece = match_piece(square, name, templates, debug=debug)
+        piece = match_piece(square, name, templates, frame_idx, debug=debug)
         board[row][col] = fen_map.get(piece, '') if piece else ''
 
     fen_rows = []
@@ -306,7 +320,7 @@ def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_
                     points = np.array([
                         [1280, 240], # top left
                         [1879, 240], # top right
-                        [1879, 836],  # bottem right
+                        [1879, 836],  # bottom right
                         [1280, 836] # bottom left
                     ], dtype="float32")
                     crop = frame
@@ -319,43 +333,10 @@ def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_
                 cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
 
                 squares, square_names = split_into_squares(board, debug_dir=frame_debug_dir)
-                fen = generate_fen(squares, square_names, templates, debug=True)
+                fen = generate_fen(squares, square_names, templates, frame_idx=i, debug=True)
                 logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
-                """fen_results.append((frame_time, fen))
-
-                # Unit test for each frame
-                match_UT1 = [
-                    "square_r0_c4.png match =qb",
-                    "square_r0_c5.png match =rb",
-                    "square_r0_c6.png match =kb",
-                    "square_r1_c2.png match =R",
-                    "square_r1_c4.png match =bb",
-                    "square_r1_c5.png match =pb",
-                    "square_r1_c6.png match =pb",
-                    "square_r1_c7.png match =pb",
-                    "square_r2_c0.png match =bb",
-                    "square_r2_c1.png match =pb",
-                    "square_r3_c0.png match =pb",
-                    "square_r3_c3.png match =rb",
-                    "square_r4_c0.png match =P",
-                    "square_r4_c4.png match =P",
-                    "square_r5_c1.png match =Q",
-                    "square_r5_c5.png match =N",
-                    "square_r5_c6.png match =P",
-                    "square_r5_c7.png match =B",
-                    "square_r6_c1.png match =P",
-                    "square_r6_c5.png match =P",
-                    "square_r6_c7.png match =P",
-                    "square_r7_c6.png match =K"
-                ]
-
-                max_len = max(len(match_result), len(match_UT1))
-                for j in range(max_len):
-                    item1 = match_result[j] if j < len(match_result) else "<missing>"
-                    item2 = match_UT1[j] if j < len(match_UT1) else "<missing>"
-                    if item1 != item2:
-                        print(f"Frame at {frame_time:.2f}s, Difference at index {j}: match_result = '{item1}', match_UT1 = '{item2}'")
-            """
+                fen_results.append((frame_time, fen))
+            
             except ValueError as e:
                 logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
                 continue
