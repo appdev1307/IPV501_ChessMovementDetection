@@ -1,561 +1,382 @@
 import cv2
 import numpy as np
-from typing import Optional, Tuple, List, Dict
-import argparse
+import matplotlib.pyplot as plt
 import os
-import tempfile
-from pytube import YouTube
+import logging
 
-# Chessboard constants
-BOARD_SIZE = 8
-SQUARE_SIZE = 50  # Approximate size for transformed board
-CHESSBOARD_CORNERS = (7, 7)  # Inner corners for 8x8 board
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-def preprocess_image(image: np.ndarray) -> np.ndarray:
-    """Preprocess image to improve chessboard detection."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))  # Increased clipLimit for better contrast
-    gray = clahe.apply(gray)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)  # Reduced blur to preserve edges
-    return gray
+# Match result
+match_result = []
 
-def check_grid_pattern(image: np.ndarray, roi: Tuple[int, int, int, int]) -> bool:
-    """Check if the ROI contains an 8x8 grid pattern typical of a chessboard."""
-    x, y, w, h = roi
-    cropped = image[y:y+h, x:x+w]
-    if cropped.size == 0:
-        return False
-    
-    # Convert to binary image
-    _, binary = cv2.threshold(cropped, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
-    # Find horizontal and vertical lines
-    edges = cv2.Canny(binary, 50, 150)
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=w//4, maxLineGap=10)
-    
-    if lines is None:
-        return False
-    
-    horizontal_lines = 0
-    vertical_lines = 0
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        angle = np.abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
-        if angle < 10 or angle > 170:  # Horizontal line
-            horizontal_lines += 1
-        elif 80 < angle < 100:  # Vertical line
-            vertical_lines += 1
-    
-    # Expect around 7-9 lines for an 8x8 grid (inner lines)
-    return 6 <= horizontal_lines <= 10 and 6 <= vertical_lines <= 10
+# Erosion kernel
+EROSION_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
-def find_chessboard_region(image: np.ndarray, debug_dir: str = "debug_frames") -> Optional[Tuple[int, int, int, int]]:
-    """Detect the region of interest (ROI) containing the digital chessboard, prioritizing the right side."""
-    os.makedirs(debug_dir, exist_ok=True)
-    
-    # Preprocess with stronger contrast and edge-preserving blur
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=6.0, tileGridSize=(8, 8))  # Even stronger contrast
-    gray = clahe.apply(gray)
-    # Enhance contrast on the right 50%
-    right_start = int(image.shape[1] * 0.5)
-    right_half = gray[:, right_start:]
-    gray[:, right_start:] = cv2.equalizeHist(right_half)
-    gray = cv2.bilateralFilter(gray, 5, 75, 75)  # Preserve edges, reduce noise
-    
-    # Save preprocessed image
-    preprocessed_path = os.path.join(debug_dir, "preprocessed.jpg")
-    cv2.imwrite(preprocessed_path, gray)
-    print(f"Saved preprocessed image: {preprocessed_path}")
-    
-    # Try Otsu's thresholding for better grid detection
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Save thresholded images
-    thresh_path = os.path.join(debug_dir, "thresholded.jpg")
-    right_thresh_path = os.path.join(debug_dir, "thresholded_right.jpg")
-    cv2.imwrite(thresh_path, thresh)
-    cv2.imwrite(right_thresh_path, thresh[:, right_start:])
-    print(f"Saved thresholded image: {thresh_path}")
-    print(f"Saved right-half thresholded image: {right_thresh_path}")
-    
-    # Morphological operations to clean up
-    kernel = np.ones((5, 5), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
-    
-    # Find contours
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        print("No contours found.")
-        return None
-    
-    image_width = image.shape[1]
-    image_height = image.shape[0]
-    candidates = []
-    
-    # Draw all contours for debugging
-    contour_image = image.copy()
-    cv2.drawContours(contour_image, contours, -1, (0, 0, 255), 2)
-    contour_path = os.path.join(debug_dir, "contours.jpg")
-    cv2.imwrite(contour_path, contour_image)
-    print(f"Saved contour image: {contour_path}")
-    
-    print("Contour analysis:")
-    for i, contour in enumerate(sorted(contours, key=cv2.contourArea, reverse=True)[:20]):
-        peri = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        if len(approx) == 4:
-            x, y, w, h = cv2.boundingRect(approx)
-            aspect_ratio = w / float(h)
-            area = w * h
-            area_ratio = area / (image_width * image_height)
-            if w * h > 10000:  # Lowered minimum area
-                print(f"Contour {i}: x={x}, y={y}, w={w}, h={h}, area_ratio={area_ratio:.3f}, aspect_ratio={aspect_ratio:.2f}")
-                # Relaxed geometric filters
-                if (0.7 < aspect_ratio < 1.3 and 
-                    0.03 < area_ratio < 0.20 and 
-                    x > image_width * 0.5 and  # Relaxed right-side focus
-                    y < image_height * 0.7):
-                    # Check for chessboard pattern
-                    cropped = thresh[y:y+h, x:x+w]
-                    # Save cropped region for debugging
-                    cropped_path = os.path.join(debug_dir, f"cropped_contour_{i}.jpg")
-                    cv2.imwrite(cropped_path, cropped)
-                    print(f"Saved cropped contour {i}: {cropped_path}")
-                    
-                    pattern_check = check_chessboard_pattern(cropped)
-                    print(f"Contour {i} pattern check: {pattern_check}")
-                    if pattern_check:
-                        candidates.append((x, y, w, h))
-                        print(f"Contour {i} accepted as chessboard candidate.")
-                    else:
-                        print(f"Contour {i} rejected: No chessboard pattern.")
-                else:
-                    print(f"Contour {i} rejected: Failed geometric filters.")
-    
-    if not candidates:
-        print("No suitable candidates found.")
-        return None
-    
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    selected_roi = candidates[0]
-    print(f"Selected ROI: {selected_roi}")
-    return selected_roi
-
-def find_chessboard_region(image: np.ndarray, debug_dir: str = "debug_frames") -> Optional[Tuple[int, int, int, int]]:
-    """Detect the region of interest (ROI) containing the digital chessboard."""
-    os.makedirs(debug_dir, exist_ok=True)
-    
-    # Image dimensions
-    image_height, image_width = image.shape[:2]
-    print(f"Image dimensions: {image_width}x{image_height}")
-    
-    # Dynamically calculate expected chessboard size (assuming it’s ~30% of the image width)
-    expected_size = int(image_width * 0.3)  # ~548 for 1828 width
-    expected_area_ratio = (expected_size * expected_size) / (image_width * image_height)  # ~0.09 for 1828x1044
-    print(f"Expected chessboard size: {expected_size}x{expected_size}, expected area ratio: {expected_area_ratio:.3f}")
-    
-    # Preprocess with edge detection to highlight grid
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(8, 8))  # Stronger contrast
-    gray = clahe.apply(gray)
-    edges = cv2.Canny(gray, 50, 150)  # Detect edges for grid lines
-    gray = cv2.addWeighted(gray, 0.7, cv2.dilate(edges, None), 0.3, 0.0)  # Combine edges with gray
-    
-    # Save preprocessed image
-    preprocessed_path = os.path.join(debug_dir, "preprocessed.jpg")
-    cv2.imwrite(preprocessed_path, gray)
-    print(f"Saved preprocessed image: {preprocessed_path}")
-    
-    # Hybrid thresholding
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Save thresholded images
-    thresh_path = os.path.join(debug_dir, "thresholded.jpg")
-    cv2.imwrite(thresh_path, thresh)
-    print(f"Saved thresholded image: {thresh_path}")
-    
-    # Morphological operations to clean up
-    kernel = np.ones((3, 3), np.uint8)
-    kernel = np.ones((3, 3), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-
-    # Find contours
-    contours, _ = cv2.findContours(thresh, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        print("No contours found.")
-        return None
-    
-    # Draw all contours for debugging
-    contour_image = image.copy()
-    cv2.drawContours(contour_image, contours, -1, (0, 0, 255), 2)
-    contour_path = os.path.join(debug_dir, "contours.jpg")
-    cv2.imwrite(contour_path, contour_image)
-    print(f"Saved contour image: {contour_path}")
-    
-    print("Contour analysis:")
-    candidates = []
-    for i, contour in enumerate(sorted(contours, key=cv2.contourArea, reverse=True)[:20]):
-        peri = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        if len(approx) == 4:
-            x, y, w, h = cv2.boundingRect(approx)
-            aspect_ratio = w / float(h)
-            area = w * h
-            area_ratio = area / (image_width * image_height)
-            min_area = (expected_size * 0.25) ** 2  # ~10% of expected area
-            if area > min_area:
-                print(f"Contour {i}: x={x}, y={y}, w={w}, h={h}, area_ratio={area_ratio:.3f}, aspect_ratio={aspect_ratio:.2f}")
-                # Relaxed geometric filters
-                if (0.6 < aspect_ratio < 1.4 and  # Very relaxed aspect ratio
-                    expected_area_ratio * 0.3 < area_ratio < expected_area_ratio * 3.0):  # Wide area range
-                    # Check for chessboard pattern
-                    cropped = thresh[y:y+h, x:x+w]
-                    # Save cropped region for debugging
-                    cropped_path = os.path.join(debug_dir, f"cropped_contour_{i}.jpg")
-                    cv2.imwrite(cropped_path, cropped)
-                    print(f"Saved cropped contour {i}: {cropped_path}")
-                    
-                    pattern_check = check_chessboard_pattern(cropped)
-                    print(f"Contour {i} pattern check: {pattern_check}")
-                    if pattern_check:
-                        candidates.append((x, y, w, h))
-                        print(f"Contour {i} accepted as chessboard candidate.")
-                    else:
-                        print(f"Contour {i} rejected: No chessboard pattern.")
-                else:
-                    print(f"Contour {i} rejected: Failed geometric filters.")
-    
-    if not candidates:
-        print("No suitable candidates found.")
-        return None
-    
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    selected_roi = candidates[0]
-    print(f"Selected ROI: {selected_roi}")
-    return selected_roi
-
-def check_chessboard_pattern(image: np.ndarray) -> bool:
-    """Check for alternating light/dark squares indicative of a chessboard."""
-    if image.size == 0:
-        return False
-    
-    # Resize to a manageable size
-    h, w = image.shape
-    scale = 100 / max(h, w)
-    resized = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    
-    # Count alternating regions
-    rows, cols = resized.shape
-    dark_count = 0
-    light_count = 0
-    for i in range(0, rows, max(1, rows//8)):
-        for j in range(0, cols, max(1, cols//8)):
-            region = resized[i:i+max(1, rows//8), j:j+max(1, cols//8)]
-            mean_val = np.mean(region)
-            if mean_val < 128:
-                dark_count += 1
-            else:
-                light_count += 1
-    
-    # Debug pattern check
-    total_squares = dark_count + light_count
-    print(f"Pattern check - Dark squares: {dark_count}, Light squares: {light_count}, Total: {total_squares}")
-    
-    if total_squares < 8:  # Very relaxed minimum
-        return False
-    return abs(dark_count - light_count) < total_squares * 0.5  # Very relaxed balance
-
-# Rest of the script remains unchanged (find_chessboard_corners, get_perspective_transform, etc.)
-
-def find_chessboard_corners(image: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """Find chessboard corners in the image or ROI."""
-    if roi:
-        x, y, w, h = roi
-        cropped = image[y:y+h, x:x+w]
-        if cropped.size == 0:
-            return None, None
-    else:
-        cropped = image
-    
-    gray = preprocess_image(cropped)
-    flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FAST_CHECK
-    ret, corners = cv2.findChessboardCorners(gray, CHESSBOARD_CORNERS, flags=flags)
-    if ret:
-        corners = cv2.cornerSubPix(
-            gray, corners, (11, 11), (-1, -1),
-            criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-        )
-        if roi:
-            corners += np.array([x, y], dtype=np.float32)
-        return corners, gray
-    return None, None
-
-def get_perspective_transform(corners: np.ndarray, size: int = SQUARE_SIZE * BOARD_SIZE) -> Optional[np.ndarray]:
-    """Calculate perspective transform to warp chessboard."""
-    corners = corners.reshape(-1, 2)
-    top_left = corners[0]
-    top_right = corners[CHESSBOARD_CORNERS[0] - 1]
-    bottom_left = corners[-CHESSBOARD_CORNERS[0]]
-    bottom_right = corners[-1]
-    
-    src_pts = np.float32([top_left, top_right, bottom_right, bottom_left])
-    dst_pts = np.float32([[0, 0], [size, 0], [size, size], [0, size]])
-    
-    matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-    return matrix
-
-def divide_board(warped: np.ndarray) -> List[np.ndarray]:
-    """Divide warped chessboard into 8x8 squares."""
-    squares = []
-    square_size = warped.shape[0] // BOARD_SIZE
-    for i in range(BOARD_SIZE):
-        for j in range(BOARD_SIZE):
-            square = warped[i * square_size:(i + 1) * square_size,
-                           j * square_size:(j + 1) * square_size]
-            squares.append(square)
-    return squares
-
-def detect_piece(square: np.ndarray, color_image: np.ndarray, square_idx: int, matrix: np.ndarray, frame: np.ndarray) -> Optional[Dict]:
-    """Detect and classify a piece in a square."""
-    row = square_idx // BOARD_SIZE
-    col = square_idx % BOARD_SIZE
-    square_size = SQUARE_SIZE
-    
-    warped_pts = np.float32([
-        [col * square_size, row * square_size],
-        [(col + 1) * square_size, row * square_size],
-        [(col + 1) * square_size, (row + 1) * square_size],
-        [col * square_size, (row + 1) * square_size]
-    ])
-    original_pts = cv2.perspectiveTransform(np.array([warped_pts]), np.linalg.inv(matrix))[0]
-    
-    pts = original_pts.astype(np.int32)
-    x_min, y_min = np.min(pts, axis=0)
-    x_max, y_max = np.max(pts, axis=0)
-    color_square = frame[y_min:y_max, x_min:x_max]
-    
-    if color_square.size == 0:
-        return None
-    
-    hsv = cv2.cvtColor(color_square, cv2.COLOR_BGR2HSV)
-    white_lower = np.array([0, 0, 150])
-    white_upper = np.array([180, 50, 255])
-    black_lower = np.array([0, 0, 0])
-    black_upper = np.array([180, 255, 100])
-    
-    white_mask = cv2.inRange(hsv, white_lower, white_upper)
-    black_mask = cv2.inRange(hsv, black_lower, black_upper)
-    
-    white_contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    black_contours, _ = cv2.findContours(black_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    min_area = 100
-    piece_info = None
-    
-    if white_contours:
-        max_contour = max(white_contours, key=cv2.contourArea, default=None)
-        if cv2.contourArea(max_contour) > min_area:
-            piece_info = {"color": "white", "type": "unknown"}
-    
-    elif black_contours:
-        max_contour = max(black_contours, key=cv2.contourArea, default=None)
-        if cv2.contourArea(max_contour) > min_area:
-            piece_info = {"color": "black", "type": "unknown"}
-    
-    return piece_info
-
-def detect_change(prev_squares: List[np.ndarray], curr_squares: List[np.ndarray]) -> Optional[Tuple[int, int]]:
-    """Detect changes between two sets of squares."""
-    changes = []
-    for i in range(len(prev_squares)):
-        diff = cv2.absdiff(prev_squares[i], curr_squares[i])
-        mean_diff = np.mean(diff)
-        if mean_diff > 20:
-            changes.append(i)
-    
-    if len(changes) == 2:
-        return changes[0], changes[1]
-    return None
-
-def index_to_notation(index: int) -> str:
-    """Convert square index to chess notation."""
-    row = 7 - (index // BOARD_SIZE)
-    col = index % BOARD_SIZE
-    files = 'abcdefgh'
-    return f"{files[col]}{row + 1}"
-
-def download_youtube_video(url: str) -> str:
-    """Download a YouTube video and return the temporary file path."""
-    try:
-        yt = YouTube(url)
-        stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
-        if not stream:
-            raise ValueError("No suitable MP4 stream found.")
-        temp_dir = tempfile.gettempdir()
-        temp_file = os.path.join(temp_dir, f"youtube_chess_{yt.video_id}.mp4")
-        stream.download(output_path=temp_dir, filename=f"youtube_chess_{yt.video_id}.mp4")
-        print(f"Downloaded YouTube video to: {temp_file}")
-        return temp_file
-    except Exception as e:
-        print(f"Error downloading YouTube video: {e}")
-        return ""
-
-def process_image(image_path: str, debug_dir: str = "debug_frames", manual_roi: Optional[List[int]] = None):
-    """Process a single image to detect chessboard and pieces."""
-    frame = cv2.imread(image_path)
-    if frame is None:
-        print(f"Error: Could not load image from {image_path}")
-        return
-
-    os.makedirs(debug_dir, exist_ok=True)
-
-    roi = manual_roi
-    if not roi:
-        roi = find_chessboard_region(frame, debug_dir)
-    
-    if roi:
-        x, y, w, h = roi
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        roi_frame = frame[y:y+h, x:x+w]
-        debug_roi_path = os.path.join(debug_dir, "roi_image.jpg")
-        cv2.imwrite(debug_roi_path, roi_frame)
-        print(f"Saved ROI debug image: {debug_roi_path}")
-    else:
-        roi_frame = frame
-        print("Could not detect chessboard region.")
-
-    corners, gray = find_chessboard_corners(frame, roi)
-    if corners is not None:
-        cv2.drawChessboardCorners(frame, CHESSBOARD_CORNERS, corners, True)
-        matrix = get_perspective_transform(corners)
-        warped = cv2.warpPerspective(gray, matrix, (SQUARE_SIZE * BOARD_SIZE, SQUARE_SIZE * BOARD_SIZE))
-        curr_squares = divide_board(warped)
-
-        board_state = [None] * (BOARD_SIZE * BOARD_SIZE)
-        for i in range(len(curr_squares)):
-            piece_info = detect_piece(curr_squares[i], frame, i, matrix, frame)
-            board_state[i] = piece_info
-
-        for i, piece in enumerate(board_state):
-            if piece:
-                pos = index_to_notation(i)
-                print(f"Square {pos}: {piece['color']} {piece['type']}")
-    else:
-        print("Chessboard not detected.")
-        debug_path = os.path.join(debug_dir, "image.jpg")
-        cv2.imwrite(debug_path, frame)
-        print(f"Saved debug image: {debug_path}")
-
-    cv2.imshow('Chessboard', frame)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-def process_video(source: str, is_youtube: bool = False, debug_dir: str = "debug_frames", manual_roi: Optional[List[int]] = None):
-    """Process video feed, local file, or YouTube video to detect chess moves and pieces."""
-    temp_file = None
-    if is_youtube:
-        temp_file = download_youtube_video(source)
-        if not temp_file or not os.path.exists(temp_file):
-            print("Failed to download YouTube video.")
-            return
-        source = temp_file
-
-    cap = cv2.VideoCapture(source if source else 0)
+def get_video_duration(video_path):
+    """Get the duration of a video in seconds."""
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print(f"Error: Could not open video source: {source or 'webcam'}")
-        if temp_file and os.path.exists(temp_file):
-            os.remove(temp_file)
-        return
+        logging.error(f"Cannot open video file: {video_path}")
+        raise ValueError("Cannot open video file")
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    cap.release()
+    
+    if fps <= 0:
+        logging.error("Invalid FPS value in video")
+        raise ValueError("Invalid FPS value")
+    
+    duration = frame_count / fps
+    logging.info(f"Video duration: {duration:.2f} seconds")
+    return duration
 
-    os.makedirs(debug_dir, exist_ok=True)
-    frame_count = 0
-
-    prev_squares = None
-    prev_frame = None
-    matrix = None
-    board_state = [None] * (BOARD_SIZE * BOARD_SIZE)
-
-    while True:
+def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=1.0):
+    """Extract and display frames from a video within a specified duration at given intervals."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logging.error(f"Cannot open video file: {video_path}")
+        raise ValueError("Cannot open video file")
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        logging.error("Invalid FPS value in video")
+        raise ValueError("Invalid FPS value")
+    
+    # Validate duration
+    duration = get_video_duration(video_path)
+    if start_time < 0 or end_time > duration or start_time >= end_time:
+        logging.error(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
+        raise ValueError(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
+    
+    start_frame = int(start_time * fps)
+    end_frame = int(end_time * fps)
+    frame_step = max(1, int(frame_interval * fps))  # Ensure at least 1 frame step
+    
+    frames = []
+    frame_times = []
+    
+    # Create a window for displaying frames
+    window_name = "Chessboard Video Frame"
+    cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+    
+    for frame_num in range(start_frame, end_frame + 1, frame_step):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         ret, frame = cap.read()
         if not ret:
-            print("End of video or error reading frame.")
-            break
-
-        roi = manual_roi
-        if not roi:
-            roi = find_chessboard_region(frame, debug_dir)
+            logging.warning(f"Failed to extract frame {frame_num} from video")
+            continue
         
-        if roi:
-            x, y, w, h = roi
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            roi_frame = frame[y:y+h, x:x+w]
-            debug_roi_path = os.path.join(debug_dir, f"roi_frame_{frame_count}.jpg")
-            cv2.imwrite(debug_roi_path, roi_frame)
-            print(f"Saved ROI debug frame: {debug_roi_path}")
-        else:
-            roi_frame = frame
-            print(f"Frame {frame_count}: Could not detect chessboard region.")
-
-        corners, gray = find_chessboard_corners(frame, roi)
-        if corners is not None:
-            cv2.drawChessboardCorners(frame, CHESSBOARD_CORNERS, corners, True)
-            matrix = get_perspective_transform(corners)
-            warped = cv2.warpPerspective(gray, matrix, (SQUARE_SIZE * BOARD_SIZE, SQUARE_SIZE * BOARD_SIZE))
-            curr_squares = divide_board(warped)
-
-            for i in range(len(curr_squares)):
-                piece_info = detect_piece(curr_squares[i], frame, i, matrix, frame)
-                board_state[i] = piece_info
-
-            if prev_squares is not None:
-                change = detect_change(prev_squares, curr_squares)
-                if change:
-                    from_idx, to_idx = change
-                    from_notation = index_to_notation(from_idx)
-                    to_notation = index_to_notation(to_idx)
-                    piece = board_state[from_idx] or {"color": "unknown", "type": "unknown"}
-                    print(f"Move detected: {piece['color']} {piece['type']} from {from_notation} to {to_notation}")
-
-            prev_squares = curr_squares
-            prev_frame = gray.copy()
-
-            for i, piece in enumerate(board_state):
-                if piece:
-                    pos = index_to_notation(i)
-                    print(f"Square {pos}: {piece['color']} {piece['type']}")
-        else:
-            print(f"Frame {frame_count}: Chessboard not detected.")
-            debug_path = os.path.join(debug_dir, f"frame_{frame_count}.jpg")
-            cv2.imwrite(debug_path, frame)
-            print(f"Saved debug frame: {debug_path}")
-
-        cv2.imshow('Chessboard', frame)
-        frame_count += 1
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # Display the frame
+        cv2.imshow(window_name, frame)
+        frame_time = frame_num / fps
+        logging.info(f"Displaying frame at {frame_time:.2f} seconds (frame {frame_num})")
+        
+        # Add a delay and check for 'q' key to exit
+        if cv2.waitKey(100) & 0xFF == ord('q'):  # 100ms delay, exit on 'q'
+            logging.info("User terminated video display with 'q' key")
             break
-
+        
+        frames.append(frame)
+        frame_times.append(frame_time)
+    
     cap.release()
-    cv2.destroyAllWindows()
-    if temp_file and os.path.exists(temp_file):
-        os.remove(temp_file)
+    cv2.destroyWindow(window_name)  # Clean up the display window
+    
+    if not frames:
+        logging.error(f"No frames extracted in the specified duration: {start_time}s to {end_time}s")
+        raise ValueError("No frames extracted in the specified duration")
+    
+    return frames, frame_times
 
-def main():
-    parser = argparse.ArgumentParser(description="Detect chess moves and pieces from image, video feed, local file, or YouTube.")
-    parser.add_argument("--image", type=str, default="", help="Path to image file.")
-    parser.add_argument("--video", type=str, default="", help="Path to local video file (leave empty for webcam).")
-    parser.add_argument("--youtube", type=str, default="", help="YouTube video URL.")
-    parser.add_argument("--debug-dir", type=str, default="debug_frames", help="Directory to save debug frames.")
-    parser.add_argument("--roi", type=int, nargs=4, help="Manual ROI coordinates [x, y, width, height].")
-    args = parser.parse_args()
+def order_points(pts):
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    diff = np.diff(pts, axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    return rect
 
-    if args.image:
-        process_image(args.image, debug_dir=args.debug_dir, manual_roi=args.roi)
-    elif args.youtube:
-        process_video(args.youtube, is_youtube=True, debug_dir=args.debug_dir, manual_roi=args.roi)
-    else:
-        process_video(args.video, is_youtube=False, debug_dir=args.debug_dir, manual_roi=args.roi)
+def extract_digital_board(image, debug=False):
+    print('Crop a broader region and detect a rectangular board-like contour')
+    h, w = image.shape[:2]
+    crop = image[0:h, 0:w]
+    if crop.size == 0:
+        raise ValueError("Cropped image is empty")
+
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 30, 120)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if debug:
+        debug_img = crop.copy()
+        cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
+        plt.ion()
+        plt.imshow(cv2.cvtColor(debug_img, cv2.COLOR_BGR2RGB))
+        plt.title("Debug: Detected Contours")
+        plt.axis("off")
+        os.makedirs('./debug_frames', exist_ok=True)
+        plt.savefig('./debug_frames/_dplot.png')
+        plt.close()
+
+    for c in sorted(contours, key=cv2.contourArea, reverse=True):
+        approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
+        if len(approx) >= 4 and cv2.contourArea(c) > 5000:
+            points = approx.reshape(-1, 2)
+            print(f"Detected points: {points}")
+            return crop, points
+
+    print("No valid board contour found")
+    return crop, None
+
+def load_templates(template_dir="templates", debug_dir="debug_output", debug=False):
+    pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
+    templates = {}
+    os.makedirs(debug_dir, exist_ok=True)
+
+    for p in pieces:
+        path = os.path.join(template_dir, f"{p}.png")
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            logging.error(f"Template for {p} not found at {path}")
+            raise ValueError(f"Template for {p} not found at {path}")
+
+        resized = cv2.resize(img, (80, 80))
+        eroded = cv2.erode(resized, EROSION_KERNEL, iterations=1)
+        templates[p] = eroded
+
+        if debug:
+            cv2.imwrite(os.path.join(debug_dir, f"{p}_eroded.png"), eroded)
+
+    return templates
+
+def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
+    if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
+        logging.warning(f"Empty square image: {img_name}")
+        return None
+
+    square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
+    square_resized = cv2.resize(square_gray, (80, 80))
+    square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
+
+    max_val = 0
+    best_match = None
+
+    for piece, template in templates.items():
+        try:
+            res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
+            _, val, _, _ = cv2.minMaxLoc(res)
+            if val > max_val:
+                max_val = val
+                best_match = piece
+        except cv2.error as e:
+            logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
+            continue
+
+    if max_val >= threshold:
+        if debug:
+            os.makedirs('./debug_frames/match', exist_ok=True)
+            vis = np.hstack([square_resized, templates[best_match]])
+            vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+            cv2.putText(vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            cv2.imwrite(f'./debug_frames/match/{img_name}_match.png', vis_bgr)
+            match_result.append(f"{img_name} match ={best_match}")
+        return best_match
+    return None
+
+def warp_board(crop, points):
+    rect = order_points(points)
+    dst = np.array([
+        [0, 0],
+        [551, 0],
+        [551, 551],
+        [0, 551]
+    ], dtype="float32")
+
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(crop, M, (552, 552))
+
+    if warped.size == 0 or warped.shape[0] == 0 or warped.shape[1] == 0:
+        raise ValueError("Warped image is empty or invalid")
+
+    return warped
+
+def split_into_squares(board_img, debug_dir="./debug_frames"):
+    os.makedirs(debug_dir, exist_ok=True)
+    squares = []
+    square_names = []
+    height, width = board_img.shape[:2]
+    dy, dx = 69, 69
+
+    if height < 8 * dy or width < 8 * dx:
+        logging.warning(f"Warped board too small: {width}x{height}, need at least {8*dx}x{8*dy}")
+        top_pad = max(0, 8 * dy - height)
+        left_pad = max(0, 8 * dx - width)
+        board_img = cv2.copyMakeBorder(board_img, 0, top_pad, 0, left_pad, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+        logging.info(f"Padded board to {board_img.shape[1]}x{board_img.shape[0]}")
+
+    for row in range(8):
+        for col in range(8):
+            y_start, y_end = row * dy, (row + 1) * dy
+            x_start, x_end = col * dx, (col + 1) * dx
+            square = board_img[y_start:y_end, x_start:x_end]
+            if square.size == 0 or square.shape[0] < dy or square.shape[1] < dx:
+                logging.warning(f"Empty or undersized square at row {row}, col {col}")
+                continue
+            gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
+            resized = cv2.resize(gray, (68, 68))
+            name = f'square_r{row}_c{col}.png'
+            cv2.imwrite(os.path.join(debug_dir, name), resized)
+            squares.append(resized)
+            square_names.append(name)
+    return squares, square_names
+
+def generate_fen(squares, square_names, templates, debug=False):
+    board = [['' for _ in range(8)] for _ in range(8)]
+    fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
+               'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
+
+    for i, (square, name) in enumerate(zip(squares, square_names)):
+        row, col = i // 8, i % 8
+        piece = match_piece(square, name, templates, debug=debug)
+        board[row][col] = fen_map.get(piece, '') if piece else ''
+
+    fen_rows = []
+    for row in board:
+        empty = 0
+        fen_row = ''
+        for square in row:
+            if square == '':
+                empty += 1
+            else:
+                if empty > 0:
+                    fen_row += str(empty)
+                    empty = 0
+                fen_row += square
+        if empty > 0:
+            fen_row += str(empty)
+        fen_rows.append(fen_row)
+
+    fen = '/'.join(fen_rows) + ' w KQkq - 0 1'
+    return fen
+
+def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_board_detection=False):
+    try:
+        # Validate video file existence
+        if not os.path.exists(video_path):
+            logging.error(f"Video file does not exist: {video_path}")
+            raise ValueError(f"Video file does not exist: {video_path}")
+        
+        # Validate duration
+        duration = get_video_duration(video_path)
+        if end_time > duration:
+            logging.warning(f"Requested end_time ({end_time}s) exceeds video duration ({duration}s). Setting end_time to {duration}s.")
+            end_time = duration
+        
+        # Extract and display frames within the specified duration
+        frames, frame_times = extract_frames_in_duration(video_path, start_time, end_time, frame_interval)
+        logging.info(f"Extracted {len(frames)} frames from {start_time}s to {end_time}s")
+        
+        # Load templates once
+        templates = load_templates("templates", debug_dir="debug_output", debug=True)
+        
+        # Process each frame
+        fen_results = []
+        for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
+            logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {i})")
+            
+            # Reset match_result for each frame
+            global match_result
+            match_result = []
+            
+            try:
+                # Try dynamic board detection if enabled
+                if use_dynamic_board_detection:
+                    crop, points = extract_digital_board(frame, debug=True)
+                    if points is None:
+                        logging.warning(f"No board detected in frame at {frame_time:.2f}s, skipping")
+                        continue
+                else:
+                    # Use hardcoded points
+                    points = np.array([
+                        [1280, 240], # top left
+                        [1879, 240], # top right
+                        [1879, 836],  # bottem right
+                        [1280, 836] # bottom left
+                    ], dtype="float32")
+                    crop = frame
+
+                logging.info(f"Warping board with points: {points.tolist()}")
+                board = warp_board(crop, points)
+                logging.info(f"Warped board shape: {board.shape}")
+                frame_debug_dir = f'./debug_frames/frame_{i:03d}'
+                os.makedirs(frame_debug_dir, exist_ok=True)
+                cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
+
+                squares, square_names = split_into_squares(board, debug_dir=frame_debug_dir)
+                fen = generate_fen(squares, square_names, templates, debug=True)
+                logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
+                """fen_results.append((frame_time, fen))
+
+                # Unit test for each frame
+                match_UT1 = [
+                    "square_r0_c4.png match =qb",
+                    "square_r0_c5.png match =rb",
+                    "square_r0_c6.png match =kb",
+                    "square_r1_c2.png match =R",
+                    "square_r1_c4.png match =bb",
+                    "square_r1_c5.png match =pb",
+                    "square_r1_c6.png match =pb",
+                    "square_r1_c7.png match =pb",
+                    "square_r2_c0.png match =bb",
+                    "square_r2_c1.png match =pb",
+                    "square_r3_c0.png match =pb",
+                    "square_r3_c3.png match =rb",
+                    "square_r4_c0.png match =P",
+                    "square_r4_c4.png match =P",
+                    "square_r5_c1.png match =Q",
+                    "square_r5_c5.png match =N",
+                    "square_r5_c6.png match =P",
+                    "square_r5_c7.png match =B",
+                    "square_r6_c1.png match =P",
+                    "square_r6_c5.png match =P",
+                    "square_r6_c7.png match =P",
+                    "square_r7_c6.png match =K"
+                ]
+
+                max_len = max(len(match_result), len(match_UT1))
+                for j in range(max_len):
+                    item1 = match_result[j] if j < len(match_result) else "<missing>"
+                    item2 = match_UT1[j] if j < len(match_UT1) else "<missing>"
+                    if item1 != item2:
+                        print(f"Frame at {frame_time:.2f}s, Difference at index {j}: match_result = '{item1}', match_UT1 = '{item2}'")
+            """
+            except ValueError as e:
+                logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
+                continue
+        
+        # Print all FEN results
+        print("\nFEN Results:")
+        for frame_time, fen in fen_results:
+            print(f"Time {frame_time:.2f}s: {fen}")
+
+    except Exception as e:
+        logging.error(f"Video processing error: {e}")
+        print(f"Failed to process video: {e}")
+    finally:
+        # Ensure all OpenCV windows are closed
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    # Path to the local video file
+    video_path = "video.mp4.mkv"  # Replace with the actual path to your downloaded clip
+    start_time = 300  # Start at 0 seconds
+    end_time = 305   # End at 10 seconds
+    frame_interval = 1.0  # Process one frame per second
+    use_dynamic_board_detection = False  # Set to True to use dynamic board detection
+    main(video_path, start_time, end_time, frame_interval, use_dynamic_board_detection)
