@@ -33,7 +33,7 @@ def get_video_duration(video_path):
     return duration
 
 def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=1.0):
-    """Extract and display frames from a video within a specified duration at given intervals."""
+    """Extract frames from a video within a specified duration at given intervals."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logging.error(f"Cannot open video file: {video_path}")
@@ -57,10 +57,6 @@ def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=
     frames = []
     frame_times = []
     
-    # Create a window for displaying frames
-    window_name = "Chessboard Video Frame"
-    cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
-    
     for frame_num in range(start_frame, end_frame + 1, frame_step):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         ret, frame = cap.read()
@@ -68,27 +64,18 @@ def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=
             logging.warning(f"Failed to extract frame {frame_num} from video")
             continue
         
-        # Display the frame
-        cv2.imshow(window_name, frame)
         frame_time = frame_num / fps
-        logging.info(f"Displaying frame at {frame_time:.2f} seconds (frame {frame_num})")
-        
-        # Add a delay and check for 'q' key to exit
-        if cv2.waitKey(100) & 0xFF == ord('q'):  # 100ms delay, exit on 'q'
-            logging.info("User terminated video display with 'q' key")
-            break
-        
+        logging.info(f"Extracted frame at {frame_time:.2f} seconds (frame {frame_num})")
         frames.append(frame)
         frame_times.append(frame_time)
     
     cap.release()
-    cv2.destroyWindow(window_name)  # Clean up the display window
     
     if not frames:
         logging.error(f"No frames extracted in the specified duration: {start_time}s to {end_time}s")
         raise ValueError("No frames extracted in the specified duration")
     
-    return frames, frame_times
+    return frames, frame_times, fps
 
 def order_points(pts):
     rect = np.zeros((4, 2), dtype="float32")
@@ -172,7 +159,6 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug
             res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
             _, val, _, _ = cv2.minMaxLoc(res)
             if debug:
-                # Create debug image for each template comparison
                 vis = np.hstack([square_resized, template])
                 vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
                 cv2.putText(vis_bgr, f"Piece: {piece} Score: {val:.2f}", (5, 64),
@@ -187,13 +173,11 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug
 
     if max_val >= threshold:
         if debug:
-            # Save debug images for all comparisons in a frame-specific directory
             frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
             os.makedirs(frame_debug_dir, exist_ok=True)
             for idx, debug_img in enumerate(debug_frames):
                 piece_name = list(templates.keys())[idx]
-            #    cv2.imwrite(f'{frame_debug_dir}/{img_name}_match_{piece_name}.png', debug_img)
-            # Save the best match image separately
+                cv2.imwrite(f'{frame_debug_dir}/{img_name}_match_{piece_name}.png', debug_img)
             best_vis = np.hstack([square_resized, templates[best_match]])
             best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
             cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
@@ -218,12 +202,13 @@ def warp_board(crop, points):
     if warped.size == 0 or warped.shape[0] == 0 or warped.shape[1] == 0:
         raise ValueError("Warped image is empty or invalid")
 
-    return warped
+    return warped, M
 
 def split_into_squares(board_img, debug_dir="./debug_frames"):
     os.makedirs(debug_dir, exist_ok=True)
     squares = []
     square_names = []
+    square_positions = []
     height, width = board_img.shape[:2]
     dy, dx = 69, 69
 
@@ -245,10 +230,11 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
             gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
             resized = cv2.resize(gray, (68, 68))
             name = f'square_r{row}_c{col}.png'
-            cv2.imwrite(os.path.join(debug_dir, name), resized)
+            #cv2.imwrite(os.path.join(debug_dir, name), resized)
             squares.append(resized)
             square_names.append(name)
-    return squares, square_names
+            square_positions.append((row, col))
+    return squares, square_names, square_positions
 
 def generate_fen(squares, square_names, templates, frame_idx, debug=False):
     board = [['' for _ in range(8)] for _ in range(8)]
@@ -277,7 +263,67 @@ def generate_fen(squares, square_names, templates, frame_idx, debug=False):
         fen_rows.append(fen_row)
 
     fen = '/'.join(fen_rows) + ' w KQkq - 0 1'
-    return fen
+    return fen, board
+
+def detect_movement(prev_board, curr_board):
+    """Detect chess piece movement between two board states."""
+    moves = []
+    for row in range(8):
+        for col in range(8):
+            prev_piece = prev_board[row][col]
+            curr_piece = curr_board[row][col]
+            if prev_piece != curr_piece:
+                # Piece appeared or changed
+                if prev_piece == '' and curr_piece != '':
+                    # Piece moved to this square
+                    to_square = f"{chr(97 + col)}{8 - row}"
+                    # Find where the piece came from
+                    for r in range(8):
+                        for c in range(8):
+                            if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
+                                from_square = f"{chr(97 + c)}{8 - r}"
+                                move = f"{curr_piece}{from_square}-{to_square}"
+                                moves.append(move)
+                                break
+                # Piece disappeared (captured or moved)
+                elif prev_piece != '' and curr_piece == '':
+                    # Handled in the appearance case to avoid duplication
+                    continue
+                # Piece changed (e.g., promotion)
+                elif prev_piece != '' and curr_piece != '':
+                    to_square = f"{chr(97 + col)}{8 - row}"
+                    move = f"{prev_piece}{to_square}->{curr_piece}{to_square}"
+                    moves.append(move)
+    return moves
+
+def annotate_frame(frame, moves, frame_time, points, M):
+    """Annotate the frame with detected moves and frame time."""
+    annotated = frame.copy()
+    
+    # Transform board coordinates back to original image coordinates
+    dst = np.array([
+        [0, 0],
+        [551, 0],
+        [551, 551],
+        [0, 551]
+    ], dtype="float32")
+    M_inv = cv2.getPerspectiveTransform(dst, order_points(points))
+    
+    # Draw board outline
+    for i in range(4):
+        pt1 = tuple(points[i].astype(int))
+        pt2 = tuple(points[(i + 1) % 4].astype(int))
+        cv2.line(annotated, pt1, pt2, (0, 255, 0), 2)
+
+    # Annotate moves
+    y_offset = 50
+    cv2.putText(annotated, f"Time: {frame_time:.2f}s", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    for i, move in enumerate(moves):
+        cv2.putText(annotated, f"Move: {move}", (10, y_offset + i * 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    
+    return annotated
 
 def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_board_detection=False):
     try:
@@ -292,15 +338,25 @@ def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_
             logging.warning(f"Requested end_time ({end_time}s) exceeds video duration ({duration}s). Setting end_time to {duration}s.")
             end_time = duration
         
-        # Extract and display frames within the specified duration
-        frames, frame_times = extract_frames_in_duration(video_path, start_time, end_time, frame_interval)
+        # Extract frames within the specified duration
+        frames, frame_times, fps = extract_frames_in_duration(video_path, start_time, end_time, frame_interval)
         logging.info(f"Extracted {len(frames)} frames from {start_time}s to {end_time}s")
         
+        # Initialize video writer
+        output_path = "annotated_chess_moves.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        height, width = frames[0].shape[:2]
+        out = cv2.VideoWriter(output_path, fourcc, fps / frame_interval, (width, height))
+        
         # Load templates once
-        templates = load_templates("templates", debug_dir="debug_output", debug=True)
+        templates = load_templates("templates", debug_dir="debug_output", debug=False)
         
         # Process each frame
         fen_results = []
+        prev_board = None
+        window_name = "Chessboard with Moves"
+        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        
         for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
             logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {i})")
             
@@ -311,53 +367,78 @@ def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_
             try:
                 # Try dynamic board detection if enabled
                 if use_dynamic_board_detection:
-                    crop, points = extract_digital_board(frame, debug=True)
+                    crop, points = extract_digital_board(frame, debug=False)
                     if points is None:
                         logging.warning(f"No board detected in frame at {frame_time:.2f}s, skipping")
+                        out.write(frame)  # Write original frame if no board detected
                         continue
                 else:
                     # Use hardcoded points
                     points = np.array([
                         [1280, 240], # top left
                         [1879, 240], # top right
-                        [1879, 836],  # bottom right
+                        [1879, 836], # bottom right
                         [1280, 836] # bottom left
                     ], dtype="float32")
                     crop = frame
 
                 logging.info(f"Warping board with points: {points.tolist()}")
-                board = warp_board(crop, points)
+                board, M = warp_board(crop, points)
                 logging.info(f"Warped board shape: {board.shape}")
                 frame_debug_dir = f'./debug_frames/frame_{i:03d}'
                 os.makedirs(frame_debug_dir, exist_ok=True)
-                cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
+                #cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
 
-                squares, square_names = split_into_squares(board, debug_dir=frame_debug_dir)
-                fen = generate_fen(squares, square_names, templates, frame_idx=i, debug=True)
+                squares, square_names, square_positions = split_into_squares(board, debug_dir=frame_debug_dir)
+                fen, curr_board = generate_fen(squares, square_names, templates, frame_idx=i, debug=False)
                 logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
-                fen_results.append((frame_time, fen))
+                
+                # Detect movement
+                moves = []
+                if prev_board is not None:
+                    moves = detect_movement(prev_board, curr_board)
+                    logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
+                
+                # Annotate frame with moves
+                annotated_frame = annotate_frame(frame, moves, frame_time, points, M)
+                
+                # Display annotated frame
+                cv2.imshow(window_name, annotated_frame)
+                if cv2.waitKey(100) & 0xFF == ord('q'):
+                    logging.info("User terminated video display with 'q' key")
+                    break
+                
+                # Write to output video
+                out.write(annotated_frame)
+                
+                fen_results.append((frame_time, fen, moves))
+                prev_board = curr_board
             
             except ValueError as e:
                 logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
+                out.write(frame)  # Write original frame on error
                 continue
         
-        # Print all FEN results
-        print("\nFEN Results:")
-        for frame_time, fen in fen_results:
+        # Print all FEN results and moves
+        print("\nFEN and Move Results:")
+        for frame_time, fen, moves in fen_results:
             print(f"Time {frame_time:.2f}s: {fen}")
+            if moves:
+                print(f"  Moves: {', '.join(moves)}")
 
     except Exception as e:
         logging.error(f"Video processing error: {e}")
         print(f"Failed to process video: {e}")
     finally:
-        # Ensure all OpenCV windows are closed
+        # Release resources
+        out.release()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     # Path to the local video file
     video_path = "video.mp4.mkv"  # Replace with the actual path to your downloaded clip
     start_time = 300  # Start at 0 seconds
-    end_time = 305   # End at 10 seconds
+    end_time = 400   # End at 10 seconds
     frame_interval = 1.0  # Process one frame per second
     use_dynamic_board_detection = False  # Set to True to use dynamic board detection
     main(video_path, start_time, end_time, frame_interval, use_dynamic_board_detection)
