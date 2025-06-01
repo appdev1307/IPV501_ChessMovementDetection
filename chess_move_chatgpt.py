@@ -71,7 +71,7 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
             logging.error(f"Template for {p} not found at {path}")
             raise ValueError(f"Template for {p} not found at {path}")
 
-        resized = cv2.resize(img, (68, 68))
+        resized = cv2.resize(img, (80, 80))  # Changed from (68, 68) to (80, 80)
         eroded = cv2.erode(resized, EROSION_KERNEL, iterations=1)
         templates[p] = eroded
 
@@ -81,13 +81,13 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
 
     return templates
 
-def match_piece(square_img, img_name, templates, threshold=0.4, debug=False):
+def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
         return None
 
     square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
-    square_resized = cv2.resize(square_gray, (68, 68))
+    square_resized = cv2.resize(square_gray, (80, 80))  # Changed from (68, 68) to (80, 80)
     square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
 
     max_val = 0
