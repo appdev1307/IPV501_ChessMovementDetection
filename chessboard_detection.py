@@ -1,26 +1,127 @@
+import cv2
 import numpy as np
-import cv2 as cv
-import glob
-# termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-# prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
-objp = np.zeros((6*7,3), np.float32)
-objp[:,:2] = np.mgrid[0:7,0:6].T.reshape(-1,2)
-# Arrays to store object points and image points from all the images.
-objpoints = [] # 3d point in real world space
-imgpoints = [] # 2d points in image plane.
-fname = 'chessboard_template.PNG'
-img = cv.imread(fname)
-gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-# Find the chess board corners
-ret, corners = cv.findChessboardCorners(gray, (7,7), None)
-# If found, add object points, image points (after refining them)
-if ret == True:
-    objpoints.append(objp)
-    corners2 = cv.cornerSubPix(gray,corners, (11,11), (-1,-1), criteria)
-    imgpoints.append(corners2)
-    # Draw and display the corners
-    cv.drawChessboardCorners(img, (7,7), corners2, ret)
-    cv.imshow('img', img)
-    cv.waitKey(10000)
-cv.destroyAllWindows()
+import os
+
+# Đọc ảnh và template
+image = cv2.imread('chessboard_test_image_1.PNG')
+template = cv2.imread('chessboard_template.PNG')
+if image is None or template is None:
+    print("Không thể đọc ảnh hoặc template!")
+    exit()
+
+# Chuyển ảnh sang không gian màu HSV
+hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+# Điều chỉnh phạm vi màu của bàn cờ (xanh lá và trắng) - Mở rộng thêm
+lower_green = np.array([10, 5, 5])    # Mở rộng để bao quát nhiều sắc xanh hơn
+upper_green = np.array([130, 255, 255])
+lower_white = np.array([0, 0, 80])    # Bao gồm trắng nhạt hơn
+upper_white = np.array([180, 80, 255])
+
+# Tạo mask cho màu xanh lá và trắng
+mask_green = cv2.inRange(hsv, lower_green, upper_green)
+mask_white = cv2.inRange(hsv, lower_white, upper_white)
+mask = cv2.bitwise_or(mask_green, mask_white)
+
+# Lưu mask để debug
+cv2.imwrite('mask_green_debug.jpg', mask_green)
+cv2.imwrite('mask_white_debug.jpg', mask_white)
+cv2.imwrite('mask_combined_debug.jpg', mask)
+
+# Loại bỏ nhiễu bằng morphologic operations
+kernel = np.ones((5, 5), np.uint8)
+mask = cv2.dilate(mask, kernel, iterations=2)
+mask = cv2.erode(mask, kernel, iterations=2)
+
+# Lưu mask sau morphologic
+cv2.imwrite('mask_morph_debug.jpg', mask)
+
+# Áp dụng mask lên ảnh gốc để giảm nhiễu cho template matching
+masked_image = cv2.bitwise_and(image, image, mask=mask)
+gray_masked = cv2.cvtColor(masked_image, cv2.COLOR_BGR2GRAY)
+
+# Chuyển template sang grayscale
+gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+
+# Thử nhiều scale_factor để tìm kích thước template phù hợp
+scale_factors = [0.3, 0.5, 0.7, 0.9, 1.0]  # Danh sách scale để thử
+best_max_val = 0
+best_scale = 0
+best_loc = None
+best_template_size = None
+
+for scale in scale_factors:
+    resized_template = cv2.resize(gray_template, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    if resized_template.shape[0] > gray_masked.shape[0] or resized_template.shape[1] > gray_masked.shape[1]:
+        continue  # Bỏ qua nếu template lớn hơn ảnh
+
+    result = cv2.matchTemplate(gray_masked, resized_template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+    
+    if max_val > best_max_val:
+        best_max_val = max_val
+        best_scale = scale
+        best_loc = max_loc
+        best_template_size = resized_template.shape
+
+# Kiểm tra độ tin cậy của matching
+if best_max_val < 0.3:  # Giảm ngưỡng để tăng cơ hội tìm bàn cờ
+    print("Template matching không đủ độ tin cậy! Kiểm tra các file mask_*.jpg để điều chỉnh ngưỡng màu HSV.")
+    exit()
+
+print(f"Scale factor tốt nhất: {best_scale}, Max val: {best_max_val}")
+
+# Lấy kích thước template đã resize
+h, w = best_template_size
+
+# Tọa độ vùng bàn cờ
+top_left = best_loc
+bottom_right = (top_left[0] + w, top_left[1] + h)
+
+# Cắt vùng bàn cờ
+board = image[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+
+# Lưu bàn cờ đã cô lập để kiểm tra
+output_dir = 'chessboard_extracted'
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+cv2.imwrite(os.path.join(output_dir, 'extracted_board.jpg'), board)
+
+# Chia lưới 8x8 dựa trên kích thước bàn cờ đã cắt
+board_height, board_width, _ = board.shape
+square_size_x = board_width // 8
+square_size_y = board_height // 8
+
+# Tạo thư mục lưu các ô
+squares_dir = 'chessboard_squares'
+if not os.path.exists(squares_dir):
+    os.makedirs(squares_dir)
+
+# Duyệt qua các ô và phân tích
+for i in range(8):
+    for j in range(8):
+        # Tọa độ ô
+        x1 = j * square_size_x
+        x2 = (j + 1) * square_size_x
+        y1 = i * square_size_y
+        y2 = (i + 1) * square_size_y
+        
+        # Cắt ô
+        square = board[y1:y2, x1:x2]
+        gray_square = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY)
+        
+        # Xác định ô trắng hay đen (dựa trên trung bình intensity)
+        avg_intensity = np.mean(gray_square)
+        color = "white" if avg_intensity > 127 else "black"
+        
+        # Phát hiện quân cờ bằng cách đếm cạnh
+        edges = cv2.Canny(gray_square, 50, 150)
+        edge_count = np.sum(edges > 0)
+        has_piece = edge_count > 200  # Ngưỡng có thể điều chỉnh
+        
+        # Lưu ô
+        label = f"{color}_piece" if has_piece else f"{color}_empty"
+        cv2.imwrite(os.path.join(squares_dir, f'square_{i}_{j}_{label}.jpg'), square)
+
+print(f"Bàn cờ đã được cô lập và lưu tại: {output_dir}/extracted_board.jpg")
+print(f"Các ô đã được lưu trong thư mục: {squares_dir}")
