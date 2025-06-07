@@ -257,11 +257,16 @@ def main():
         match_UT1.append("square_r7_c6.png match =K")
 
         max_len = max(len(match_result), len(match_UT1))
+        UT1_failed = False
         for i in range(max_len):
             item1 = match_result[i] if i < len(match_result) else "<missing>"
             item2 = match_UT1[i] if i < len(match_UT1) else "<missing>"
             if item1 != item2:
                 print(f"Difference at index {i}: match_result = '{item1}', match_UT1 = '{item2}'")
+                UT1_failed = True
+
+        if UT1_failed == False:
+            print ("UT 1: passed")
 
     except ValueError as e:
         logging.error(f"Processing error: {e}")
