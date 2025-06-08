@@ -58,7 +58,7 @@ def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         logging.error("Invalid FPS value in video")
-        raise ValueValueError("Invalid FPS value")
+        raise ValueError("Invalid FPS value")
     
     duration = get_video_duration(video_path)
     if start_time < 0 or end_time > duration or start_time >= end_time:
@@ -92,11 +92,8 @@ def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=
     
     return frames, frame_times, fps
 
-import numpy as np
-import cv2
-import os
-
 def extract_digital_board(image, debug=False):
+    """Detect chessboard region from image."""
     print('Detecting first chessboard square from image...')
     h, w = image.shape[:2]
     crop = image[0:h, 0:w]
@@ -150,7 +147,7 @@ def extract_digital_board(image, debug=False):
                 ]
 
                 if min(side_lengths) < 50:
-                    continue  # Reject tiny quads
+                    continue
 
                 aspect_ratio = max(side_lengths) / min(side_lengths)
                 if 0.8 < aspect_ratio < 1.2:
@@ -163,17 +160,16 @@ def extract_digital_board(image, debug=False):
         print("No valid square detected.")
         return crop, None
 
-    # Use known square size to calculate full board
     square_w, square_h = 75, 75
     board_w, board_h = 8 * square_w, 8 * square_h
 
-    top_left = best_quad[0]  # float32
+    top_left = best_quad[0]
 
     chessboard_corners = np.array([
         top_left,
-        top_left + np.array([board_w, 0]),            # top-right
-        top_left + np.array([board_w, board_h]),      # bottom-right
-        top_left + np.array([0, board_h])             # bottom-left
+        top_left + np.array([board_w, 0]),
+        top_left + np.array([board_w, board_h]),
+        top_left + np.array([0, board_h])
     ], dtype=np.float32)
 
     if debug:
@@ -187,19 +183,17 @@ def extract_digital_board(image, debug=False):
 
     return crop, chessboard_corners
 
-
 def order_points(pts):
-    """ Return consistent order: top-left, top-right, bottom-right, bottom-left """
+    """Return consistent order: top-left, top-right, bottom-right, bottom-left."""
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
     diff = np.diff(pts, axis=1)
 
-    rect[0] = pts[np.argmin(s)]      # top-left
-    rect[2] = pts[np.argmax(s)]      # bottom-right
-    rect[1] = pts[np.argmin(diff)]   # top-right
-    rect[3] = pts[np.argmax(diff)]   # bottom-left
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
     return rect
-
 
 def mouse_callback(event, x, y, flags, param):
     """Callback for mouse clicks to select chessboard corners."""
@@ -239,6 +233,7 @@ def select_board_corners(frame):
         raise ValueError("Exactly 4 points must be selected")
 
 def load_templates(template_dir="templates", debug_dir="debug_output", debug=False):
+    """Load chess piece templates."""
     pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
     templates = {}
     os.makedirs(debug_dir, exist_ok=True)
@@ -260,6 +255,7 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
     return templates
 
 def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug=False):
+    """Match a chess piece in a square image using template matching."""
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
         return None
@@ -280,8 +276,8 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug
                 vis = np.hstack([square_resized, template])
                 vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
                 cv2.putText(vis_bgr, f"Piece: {piece} Score: {val:.2f}", (5, 64),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                debug_frames.append(vis_bgr)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                debug_frames.append((piece, vis_bgr))
             if val > max_val:
                 max_val = val
                 best_match = piece
@@ -293,18 +289,19 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug
         if debug:
             frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
             os.makedirs(frame_debug_dir, exist_ok=True)
-            for idx, debug_img in enumerate(debug_frames):
-                piece_name = list(templates.keys())[idx]
+            for piece, debug_img in debug_frames:
+                cv2.imwrite(f'{frame_debug_dir}/{piece}_match.png', debug_img)
             best_vis = np.hstack([square_resized, templates[best_match]])
             best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
             cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
             cv2.imwrite(f'{frame_debug_dir}/{img_name}_best_match.png', best_vis_bgr)
-            match_result.append(f"{img_name} match_nums = {best_match}")
+            match_result.append(f"{img_name} match = {best_match}")
         return best_match
     return None
 
 def warp_board(crop, points):
+    """Warp the chessboard region to a standard 552x552 image."""
     rect = order_points(points)
     dst = np.array([
         [0, 0],
@@ -322,6 +319,7 @@ def warp_board(crop, points):
     return warped, M
 
 def split_into_squares(board_img, debug_dir="./debug_frames"):
+    """Split the warped board into 8x8 squares."""
     os.makedirs(debug_dir, exist_ok=True)
     squares = []
     square_names = []
@@ -353,6 +351,7 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
     return squares, square_names, square_positions
 
 def generate_fen(squares, square_names, templates, frame_idx, debug=False):
+    """Generate FEN string from the board squares."""
     board = [['' for _ in range(8)] for _ in range(8)]
     fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
                'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
@@ -407,7 +406,7 @@ def detect_movement(prev_board, curr_board):
     return moves
 
 def annotate_frame(frame, moves, frame_time, points, M):
-    """Annotate the frame with detected moves and frame time."""
+    """Annotate the frame with detected moves, frame time, and highlight move squares in green."""
     annotated = frame.copy()
     
     dst = np.array([
@@ -418,11 +417,56 @@ def annotate_frame(frame, moves, frame_time, points, M):
     ], dtype="float32")
     M_inv = cv2.getPerspectiveTransform(dst, order_points(points))
     
+    # Draw chessboard outline
     for i in range(4):
         pt1 = tuple(points[i].astype(int))
         pt2 = tuple(points[(i + 1) % 4].astype(int))
         cv2.line(annotated, pt1, pt2, (0, 255, 0), 2)
 
+    # Highlight move squares
+    square_size = 552 / 8  # Size of each square in warped board (552x552)
+    for move in moves:
+        # Parse move (e.g., "pe2-e4" or "Nd2-f3")
+        move = move[1:] if move[0] in 'prnbqkPRNBQK' else move  # Remove piece identifier
+        if '-' in move:
+            from_square, to_square = move.split('-')
+        elif '->' in move:
+            from_square, to_square = move.split('->')
+        else:
+            continue
+
+        # Convert algebraic notation to board indices
+        def square_to_coords(square):
+            col = ord(square[0]) - ord('a')  # e.g., 'e' -> 4
+            row = 8 - int(square[1])  # e.g., '2' -> 6 (0-based)
+            return row, col
+
+        try:
+            from_row, from_col = square_to_coords(from_square)
+            to_row, to_col = square_to_coords(to_square)
+
+            # Define square corners in warped board space
+            for row, col in [(from_row, from_col), (to_row, to_col)]:
+                top_left = np.array([col * square_size, row * square_size], dtype=np.float32)
+                bottom_right = np.array([(col + 1) * square_size, (row + 1) * square_size], dtype=np.float32)
+                square_pts = np.array([
+                    top_left,
+                    [bottom_right[0], top_left[1]],
+                    bottom_right,
+                    [top_left[0], bottom_right[1]]
+                ], dtype=np.float32).reshape(-1, 1, 2)
+
+                # Transform back to original frame
+                square_pts_orig = cv2.perspectiveTransform(square_pts, M_inv)
+                square_pts_orig = square_pts_orig.astype(int).reshape(-1, 2)
+
+                # Draw green rectangle
+                cv2.polylines(annotated, [square_pts_orig], isClosed=True, color=(0, 255, 0), thickness=2)
+        except (ValueError, IndexError) as e:
+            logging.warning(f"Failed to parse move '{move}': {e}")
+            continue
+
+    # Draw text annotations
     y_offset = 50
     cv2.putText(annotated, f"Time: {frame_time:.2f}s", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
@@ -433,6 +477,7 @@ def annotate_frame(frame, moves, frame_time, points, M):
     return annotated
 
 def main(start_time=0, end_time=10, frame_interval=1.0):
+    """Main function to process video and detect chess moves, pausing on movement."""
     out = None
     try:
         # GUI for video selection
@@ -461,7 +506,6 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
         board_detected = False
         board_points = None
-        manual_selection = False
         
         while cap.isOpened() and not board_detected:
             ret, frame = cap.read()
@@ -497,7 +541,6 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                         logging.info("Using hardcoded chessboard points")
                         break
                     elif key == ord('m'):
-                        manual_selection = True
                         board_points = select_board_corners(frame)
                         board_detected = True
                         logging.info("Manually selected chessboard points")
@@ -508,7 +551,6 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                 cv2.imshow(window_name, frame)
                 key = cv2.waitKey(30) & 0xFF
                 if key == ord('q'):
-                    manual_selection = True
                     board_points = select_board_corners(frame)
                     board_detected = True
                     break
@@ -540,7 +582,7 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
         fen_results = []
         prev_board = None
         prev_fen = None
-        window_name = "Chessboard with Moves"
+        window_name = "Chessboard with Moves (Press any key to continue, 'q' to quit)"
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
         
         for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
@@ -566,10 +608,22 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                     logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
                 
                 annotated_frame = annotate_frame(frame, moves, frame_time, board_points, M)
+                
+                # Display frame and pause if moves are detected
                 cv2.imshow(window_name, annotated_frame)
-                if cv2.waitKey(100) & 0xFF == ord('q'):
-                    logging.info("User terminated video display with 'q' key")
-                    break
+                if moves:
+                    cv2.putText(annotated_frame, "Move detected! Press any key to continue.", 
+                                (10, height - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    cv2.imshow(window_name, annotated_frame)
+                    key = cv2.waitKey(0) & 0xFF
+                    if key == ord('q'):
+                        logging.info("User terminated video display with 'q' key")
+                        break
+                else:
+                    key = cv2.waitKey(100) & 0xFF
+                    if key == ord('q'):
+                        logging.info("User terminated video display with 'q' key")
+                        break
                 
                 out.write(annotated_frame)
                 
