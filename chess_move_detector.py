@@ -1,452 +1,581 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 import logging
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
-import threading
-import queue
-from skimage.metrics import structural_similarity as ssim
+from tkinter import filedialog
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
+# Match result
+match_result = []
+
 # Erosion kernel
 EROSION_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
-class ChessVideoGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Chess Video Analysis")
-        self.running = False
-        self.paused = False
-        self.process_thread = None
-        self.display_thread = None
-        self.video_path = ""
-        self.result_queue = queue.Queue()
+# Global variables for manual point selection
+selected_points = []
+click_count = 0
 
-        # GUI Elements
-        self.create_gui()
+def select_video_file():
+    """Open a file dialog to select a video file."""
+    root = tk.Tk()
+    root.withdraw()
+    file_path = filedialog.askopenfilename(
+        title="Select Video File",
+        filetypes=[("Video files", "*.mp4 *.mkv *.avi")]
+    )
+    return file_path
 
-    def create_gui(self):
-        # Video selection
-        self.video_frame = tk.Frame(self.root)
-        self.video_frame.pack(pady=5)
-        tk.Button(self.video_frame, text="Select Video", command=self.select_video).pack(side=tk.LEFT, padx=5)
-        self.video_label = tk.Label(self.video_frame, text="No video selected", font=("Arial", 10))
-        self.video_label.pack(side=tk.LEFT, padx=5)
+def get_video_duration(video_path):
+    """Get the duration of a video in seconds."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logging.error(f"Cannot open video file: {video_path}")
+        raise ValueError("Cannot open video file")
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    cap.release()
+    
+    if fps <= 0:
+        logging.error("Invalid FPS value in video")
+        raise ValueError("Invalid FPS value")
+    
+    duration = frame_count / fps
+    logging.info(f"Video duration: {duration:.2f} seconds")
+    return duration
 
-        # Canvas for video display
-        self.canvas = tk.Canvas(self.root, width=640, height=360, bg="black")
-        self.canvas.pack(pady=10)
+def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=1.0):
+    """Extract frames from a video within a specified duration at given intervals."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logging.error(f"Cannot open video file: {video_path}")
+        raise ValueError("Cannot open video file")
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        logging.error("Invalid FPS value in video")
+        raise ValueValueError("Invalid FPS value")
+    
+    duration = get_video_duration(video_path)
+    if start_time < 0 or end_time > duration or start_time >= end_time:
+        logging.error(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
+        raise ValueError(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
+    
+    start_frame = int(start_time * fps)
+    end_frame = int(end_time * fps)
+    frame_step = max(1, int(frame_interval * fps))
+    
+    frames = []
+    frame_times = []
+    
+    for frame_num in range(start_frame, end_frame + 1, frame_step):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ret, frame = cap.read()
+        if not ret:
+            logging.warning(f"Failed to extract frame {frame_num} from video")
+            continue
+        
+        frame_time = frame_num / fps
+        logging.info(f"Extracted frame at {frame_time:.2f} seconds (frame {frame_num})")
+        frames.append(frame)
+        frame_times.append(frame_time)
+    
+    cap.release()
+    
+    if not frames:
+        logging.error(f"No frames extracted in the specified duration: {start_time}s to {end_time}s")
+        raise ValueError("No frames extracted")
+    
+    return frames, frame_times, fps
 
-        # Progress bar
-        self.progress = ttk.Progressbar(self.root, orient="horizontal", length=400, mode="determinate")
-        self.progress.pack(pady=10)
+def extract_digital_board(image, debug=False, square_size=69):
+    print('Detecting chessboard region from image...')
+    h, w = image.shape[:2]
+    crop = image[0:h, 0:w]
 
-        # Status label
-        self.status_label = tk.Label(self.root, text="Status: Idle", font=("Arial", 12))
-        self.status_label.pack(pady=5)
+    if crop.size == 0:
+        raise ValueError("Cropped image is empty")
 
-        # FEN and moves output
-        self.fen_text = tk.Text(self.root, height=5, width=80, font=("Arial", 10))
-        self.fen_text.pack(pady=5)
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        # Control buttons
-        self.button_frame = tk.Frame(self.root)
-        self.button_frame.pack(pady=10)
-        self.start_button = tk.Button(self.button_frame, text="Start", command=self.start_processing)
-        self.start_button.pack(side=tk.LEFT, padx=5)
-        self.pause_button = tk.Button(self.button_frame, text="Pause", command=self.toggle_pause, state=tk.DISABLED)
-        self.pause_button.pack(side=tk.LEFT, padx=5)
-        self.stop_button = tk.Button(self.button_frame, text="Stop", command=self.stop_processing, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
+    thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                   cv2.THRESH_BINARY_INV, 11, 3)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    edges = cv2.Canny(closed, 50, 150)
 
-    def select_video(self):
-        """Open a file dialog to select a video file."""
-        self.video_path = filedialog.askopenfilename(
-            title="Select Video File",
-            filetypes=[("Video files", "*.mp4 *.mkv *.avi")]
-        )
-        if self.video_path:
-            self.video_label.config(text=os.path.basename(self.video_path))
-            self.start_button.config(state=tk.NORMAL)
-        else:
-            self.video_label.config(text="No video selected")
-            self.start_button.config(state=tk.DISABLED)
+    best_quad = None
 
-    def get_video_duration(self):
-        cap = cv2.VideoCapture(self.video_path)
-        if not cap.isOpened():
-            logging.error(f"Cannot open video file: {self.video_path}")
-            raise ValueError("Cannot open video file")
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        cap.release()
-        if fps <= 0:
-            logging.error("Invalid FPS value in video")
-            raise ValueError("Invalid FPS value")
-        duration = frame_count / fps
-        logging.info(f"Video duration: {duration:.2f} seconds")
-        return duration
+    for mode in [cv2.RETR_EXTERNAL, cv2.RETR_TREE]:
+        contours, _ = cv2.findContours(edges.copy(), mode, cv2.CHAIN_APPROX_SIMPLE)
 
-    def extract_frames_in_duration(self, start_time, end_time, frame_interval=1.0):
-        cap = cv2.VideoCapture(self.video_path)
-        if not cap.isOpened():
-            logging.error(f"Cannot open video file: {self.video_path}")
-            raise ValueError("Cannot open video file")
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            logging.error("Invalid FPS value in video")
-            raise ValueError("Invalid FPS value")
-        duration = self.get_video_duration()
-        if start_time < 0 or end_time > duration or start_time >= end_time:
-            logging.error(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
-            raise ValueError(f"Invalid duration")
-        start_frame = int(start_time * fps)
-        end_frame = int(end_time * fps)
-        frame_step = max(1, int(frame_interval * fps))
-        frames = []
-        frame_times = []
-        for frame_num in range(start_frame, end_frame + 1, frame_step):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-            ret, frame = cap.read()
-            if not ret:
-                logging.warning(f"Failed to extract frame {frame_num}")
-                continue
-            frame_time = frame_num / fps
-            frames.append(frame)
-            frame_times.append(frame_time)
-        cap.release()
-        if not frames:
-            logging.error(f"No frames extracted in the specified duration")
-            raise ValueError("No frames extracted")
-        return frames, frame_times, fps
-
-    def compute_frame_difference(self, prev_frame, curr_frame):
-        if prev_frame is None or curr_frame is None:
-            return 0.0
-        prev_resized = cv2.resize(prev_frame, (320, 180))
-        curr_resized = cv2.resize(curr_frame, (320, 180))
-        prev_gray = cv2.cvtColor(prev_resized, cv2.COLOR_BGR2GRAY)
-        curr_gray = cv2.cvtColor(curr_resized, cv2.COLOR_BGR2GRAY)
-        score, _ = ssim(prev_gray, curr_gray, full=True)
-        logging.info(f"SSIM score between frames: {score:.4f}")
-        return score
-
-    def order_points(self, pts):
-        rect = np.zeros((4, 2), dtype="float32")
-        s = pts.sum(axis=1)
-        diff = np.diff(pts, axis=1)
-        rect[0] = pts[np.argmin(s)]
-        rect[2] = pts[np.argmax(s)]
-        rect[1] = pts[np.argmin(diff)]
-        rect[3] = pts[np.argmax(diff)]
-        return rect
-
-    def extract_digital_board(self, image):
-        h, w = image.shape[:2]
-        crop = image[0:h, 0:w]
-        if crop.size == 0:
-            raise ValueError("Cropped image is empty")
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blurred, 30, 120)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for c in sorted(contours, key=cv2.contourArea, reverse=True):
-            approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
-            if len(approx) >= 4 and cv2.contourArea(c) > 5000:
-                points = approx.reshape(-1, 2)
-                return crop, points
+            perimeter = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.02 * perimeter, True)
+
+            if len(approx) == 4 and cv2.contourArea(approx) > 5000 and cv2.isContourConvex(approx):
+                pts = approx.reshape(4, 2)
+                rect = order_points(pts)
+
+                side_lengths = [
+                    np.linalg.norm(rect[0] - rect[1]),
+                    np.linalg.norm(rect[1] - rect[2]),
+                    np.linalg.norm(rect[2] - rect[3]),
+                    np.linalg.norm(rect[3] - rect[0])
+                ]
+
+                if min(side_lengths) < 50:
+                    continue
+
+                aspect_ratio = max(side_lengths) / min(side_lengths)
+                if 0.8 < aspect_ratio < 1.2:
+                    best_quad = rect
+                    break
+        if best_quad is not None:
+            break
+
+    if best_quad is None:
+        print("No valid board contour found.")
         return crop, None
 
-    def load_templates(self, template_dir="templates"):
-        pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
-        templates = {}
-        if not os.path.exists(template_dir):
-            logging.error(f"Template directory not found: {template_dir}")
-            raise ValueError(f"Template directory not found")
-        for p in pieces:
-            path = os.path.join(template_dir, f"{p}.png")
-            if not os.path.exists(path):
-                logging.error(f"Template for {p} not found at {path}")
-                raise ValueError(f"Template for {p} not found")
-            img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            resized = cv2.resize(img, (80, 80))
-            eroded = cv2.erode(resized, EROSION_KERNEL, iterations=1)
-            templates[p] = eroded
-        return templates
+    # Use best_quad as top-left square
+    tl, tr, br, bl = best_quad
 
-    def match_piece(self, square_img, img_name, templates, frame_idx, threshold=0.6):
-        if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
-            logging.warning(f"Empty square image: {img_name}")
-            return None
-        square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
-        square_resized = cv2.resize(square_gray, (80, 80))
-        square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
-        max_val = 0
-        best_match = None
-        for piece, template in templates.items():
-            try:
-                res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
-                _, val, _, _ = cv2.minMaxLoc(res)
-                if val > max_val:
-                    max_val = val
-                    best_match = piece
-            except cv2.error as e:
-                logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
+    # Compute direction vectors
+    dir_x = (tr - tl) / square_size
+    dir_y = (bl - tl) / square_size
+
+    # Project the entire 8x8 board
+    board_tl = tl
+    board_tr = tl + 8 * dir_x
+    board_bl = tl + 8 * dir_y
+    board_br = board_tr + 8 * dir_y
+
+    board_quad = np.array([board_tl, board_tr, board_br, board_bl], dtype=np.float32)
+
+    if debug:
+        dbg = crop.copy()
+        for pt in board_quad:
+            cv2.circle(dbg, tuple(np.int32(pt)), 5, (0, 255, 255), -1)
+        cv2.polylines(dbg, [np.int32(board_quad)], isClosed=True, color=(0, 0, 255), thickness=2)
+        os.makedirs('./debug_frames', exist_ok=True)
+        cv2.imwrite('./debug_frames/_final_board.png', dbg)
+
+    print(f"Detected board corners from first square: {board_quad}")
+    return crop, board_quad
+
+def order_points(pts):
+    """ Return consistent order: top-left, top-right, bottom-right, bottom-left """
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    diff = np.diff(pts, axis=1)
+
+    rect[0] = pts[np.argmin(s)]      # top-left
+    rect[2] = pts[np.argmax(s)]      # bottom-right
+    rect[1] = pts[np.argmin(diff)]   # top-right
+    rect[3] = pts[np.argmax(diff)]   # bottom-left
+    return rect
+
+def mouse_callback(event, x, y, flags, param):
+    """Callback for mouse clicks to select chessboard corners."""
+    global selected_points, click_count
+    if event == cv2.EVENT_LBUTTONDOWN:
+        selected_points.append([x, y])
+        click_count += 1
+        logging.info(f"Point {click_count} selected: ({x}, {y})")
+
+def select_board_corners(frame):
+    """Allow user to manually select four chessboard corners."""
+    global selected_points, click_count
+    selected_points = []
+    click_count = 0
+    
+    window_name = "Select Chessboard Corners (Click 4 points, press 'q' to confirm)"
+    cv2.namedWindow(window_name)
+    cv2.setMouseCallback(window_name, mouse_callback)
+    
+    while click_count < 4:
+        display_frame = frame.copy()
+        for i, pt in enumerate(selected_points):
+            cv2.circle(display_frame, (int(pt[0]), int(pt[1])), 5, (0, 255, 0), -1)
+            cv2.putText(display_frame, f"P{i+1}", (int(pt[0]) + 10, int(pt[1])), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        cv2.imshow(window_name, display_frame)
+        
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') and click_count == 4:
+            break
+    
+    cv2.destroyWindow(window_name)
+    if len(selected_points) == 4:
+        return np.array(selected_points, dtype="float32")
+    else:
+        logging.error("Exactly 4 points must be selected")
+        raise ValueError("Exactly 4 points must be selected")
+
+def load_templates(template_dir="templates", debug_dir="debug_output", debug=False):
+    pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
+    templates = {}
+    os.makedirs(debug_dir, exist_ok=True)
+
+    for p in pieces:
+        path = os.path.join(template_dir, f"{p}.png")
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            logging.error(f"Template for {p} not found at {path}")
+            raise ValueError(f"Template for {p} not found at {path}")
+
+        resized = cv2.resize(img, (80, 80))
+        eroded = cv2.erode(resized, EROSION_KERNEL, iterations=1)
+        templates[p] = eroded
+
+        if debug:
+            cv2.imwrite(os.path.join(debug_dir, f"{p}_eroded.png"), eroded)
+
+    return templates
+
+def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug=False):
+    if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
+        logging.warning(f"Empty square image: {img_name}")
+        return None
+
+    square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
+    square_resized = cv2.resize(square_gray, (80, 80))
+    square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
+
+    max_val = 0
+    best_match = None
+    debug_frames = []
+
+    for piece, template in templates.items():
+        try:
+            res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
+            _, val, _, _ = cv2.minMaxLoc(res)
+            if debug:
+                vis = np.hstack([square_resized, template])
+                vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+                cv2.putText(vis_bgr, f"Piece: {piece} Score: {val:.2f}", (5, 64),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                debug_frames.append(vis_bgr)
+            if val > max_val:
+                max_val = val
+                best_match = piece
+        except cv2.error as e:
+            logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
+            continue
+
+    if max_val >= threshold:
+        if debug:
+            frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
+            os.makedirs(frame_debug_dir, exist_ok=True)
+            for idx, debug_img in enumerate(debug_frames):
+                piece_name = list(templates.keys())[idx]
+            best_vis = np.hstack([square_resized, templates[best_match]])
+            best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
+            cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            cv2.imwrite(f'{frame_debug_dir}/{img_name}_best_match.png', best_vis_bgr)
+            match_result.append(f"{img_name} match_nums = {best_match}")
+        return best_match
+    return None
+
+def warp_board(crop, points):
+    rect = order_points(points)
+    dst = np.array([
+        [0, 0],
+        [551, 0],
+        [551, 551],
+        [0, 551]
+    ], dtype="float32")
+
+    M = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(crop, M, (552, 552))
+
+    if not warped.size:
+        raise ValueError("Warped image is empty or invalid")
+
+    return warped, M
+
+def split_into_squares(board_img, debug_dir="./debug_frames"):
+    os.makedirs(debug_dir, exist_ok=True)
+    squares = []
+    square_names = []
+    square_positions = []
+    height, width = board_img.shape[:2]
+    dy, dx = 69, 69
+
+    if height < 8 * dy or width < 8 * dx:
+        logging.warning(f"Warped board too small: {width}x{height}, need at least {8*dx}x{8*dy}")
+        top_pad = max(0, 8 * dy - height)
+        left_pad = max(0, 8 * dx - width)
+        board_img = cv2.copyMakeBorder(board_img, 0, top_pad, 0, left_pad, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+        logging.info(f"Padded board to {board_img.shape[1]}x{board_img.shape[0]}")
+
+    for row in range(8):
+        for col in range(8):
+            y_start, y_end = row * dy, (row + 1) * dy
+            x_start, x_end = col * dx, (col + 1) * dx
+            square = board_img[y_start:y_end, x_start:x_end]
+            if not square.size or square.shape[0] < dy or square.shape[1] < dx:
+                logging.warning(f"Empty or undersized square at row {row}, col {col}")
                 continue
-        return best_match if max_val >= threshold else None
+            gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
+            resized = cv2.resize(gray, (68, 68))
+            name = f'square_r{row}_c{col}.png'
+            squares.append(resized)
+            square_names.append(name)
+            square_positions.append((row, col))
+    return squares, square_names, square_positions
 
-    def warp_board(self, crop, points):
-        rect = self.order_points(points)
-        dst = np.array([[0, 0], [551, 0], [551, 551], [0, 551]], dtype="float32")
-        M = cv2.getPerspectiveTransform(rect, dst)
-        warped = cv2.warpPerspective(crop, M, (552, 552))
-        if warped.size == 0 or warped.shape[0] == 0 or warped.shape[1] == 0:
-            raise ValueError("Warped image is empty")
-        return warped, M
+def generate_fen(squares, square_names, templates, frame_idx, debug=False):
+    board = [['' for _ in range(8)] for _ in range(8)]
+    fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
+               'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
 
-    def split_into_squares(self, board_img):
-        squares = []
-        square_names = []
-        height, width = board_img.shape[:2]
-        dy, dx = 69, 69
-        if height < 8 * dy or width < 8 * dx:
-            top_pad = max(0, 8 * dy - height)
-            left_pad = max(0, 8 * dx - width)
-            board_img = cv2.copyMakeBorder(board_img, 0, top_pad, 0, left_pad, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-        for row in range(8):
-            for col in range(8):
-                y_start, y_end = row * dy, (row + 1) * dy
-                x_start, x_end = col * dx, (col + 1) * dx
-                square = board_img[y_start:y_end, x_start:x_end]
-                if square.size == 0 or square.shape[0] < dy or square.shape[1] < dx:
+    for i, (square, name) in enumerate(zip(squares, square_names)):
+        row, col = i // 8, i % 8
+        piece = match_piece(square, name, templates, frame_idx, debug=debug)
+        board[row][col] = fen_map.get(piece, '') if piece else ''
+
+    fen_rows = []
+    for row in board:
+        empty = 0
+        fen_row = ''
+        for square in row:
+            if square == '':
+                empty += 1
+            else:
+                if empty > 0:
+                    fen_row += str(empty)
+                    empty = 0
+                fen_row += square
+        if empty > 0:
+            fen_row += str(empty)
+        fen_rows.append(fen_row)
+
+    fen = '/'.join(fen_rows) + ' w KQkq - 0 1'
+    return fen, board
+
+def detect_movement(prev_board, curr_board):
+    """Detect chess piece movement between two board states."""
+    moves = []
+    for row in range(8):
+        for col in range(8):
+            prev_piece = prev_board[row][col]
+            curr_piece = curr_board[row][col]
+            if prev_piece != curr_piece:
+                if prev_piece == '' and curr_piece != '':
+                    to_square = f"{chr(97 + col)}{8 - row}"
+                    for r in range(8):
+                        for c in range(8):
+                            if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
+                                from_square = f"{chr(97 + c)}{8 - r}"
+                                move = f"{curr_piece}{from_square}-{to_square}"
+                                moves.append(move)
+                                break
+                elif prev_piece != '' and curr_piece == '':
                     continue
-                gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
-                resized = cv2.resize(gray, (68, 68))
-                name = f'square_r{row}_c{col}.png'
-                squares.append(resized)
-                square_names.append(name)
-        return squares, square_names
+                elif prev_piece != '' and curr_piece != '':
+                    to_square = f"{chr(97 + col)}{8 - row}"
+                    move = f"{prev_piece}{to_square}->{curr_piece}{to_square}"
+                    moves.append(move)
+    return moves
 
-    def generate_fen(self, squares, square_names, templates, frame_idx):
-        board = [['' for _ in range(8)] for _ in range(8)]
-        fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
-                   'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
-        for i, (square, name) in enumerate(zip(squares, square_names)):
-            row, col = i // 8, i % 8
-            piece = self.match_piece(square, name, templates, frame_idx)
-            board[row][col] = fen_map.get(piece, '') if piece else ''
-        fen_rows = []
-        for row in board:
-            empty = 0
-            fen_row = ''
-            for square in row:
-                if square == '':
-                    empty += 1
-                else:
-                    if empty > 0:
-                        fen_row += str(empty)
-                        empty = 0
-                    fen_row += square
-            if empty > 0:
-                fen_row += str(empty)
-            fen_rows.append(fen_row)
-        fen = '/'.join(fen_rows) + ' w KQkq - 0 1'
-        return fen, board
+def annotate_frame(frame, moves, frame_time, points, M):
+    """Annotate the frame with detected moves and frame time."""
+    annotated = frame.copy()
+    
+    dst = np.array([
+        [0, 0],
+        [551, 0],
+        [551, 551],
+        [0, 551]
+    ], dtype="float32")
+    M_inv = cv2.getPerspectiveTransform(dst, order_points(points))
+    
+    for i in range(4):
+        pt1 = tuple(points[i].astype(int))
+        pt2 = tuple(points[(i + 1) % 4].astype(int))
+        cv2.line(annotated, pt1, pt2, (0, 255, 0), 2)
 
-    def detect_movement(self, prev_board, curr_board):
-        moves = []
-        for row in range(8):
-            for col in range(8):
-                prev_piece = prev_board[row][col]
-                curr_piece = curr_board[row][col]
-                if prev_piece != curr_piece:
-                    if prev_piece == '' and curr_piece != '':
-                        to_square = f"{chr(97 + col)}{8 - row}"
-                        for r in range(8):
-                            for c in range(8):
-                                if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
-                                    from_square = f"{chr(97 + c)}{8 - r}"
-                                    moves.append(f"{curr_piece}{from_square}-{to_square}")
-                                    break
-                    elif prev_piece != '' and curr_piece == '':
-                        continue
-                    elif prev_piece != '' and curr_piece != '':
-                        to_square = f"{chr(97 + col)}{8 - row}"
-                        moves.append(f"{prev_piece}{to_square}->{curr_piece}{to_square}")
-        return moves
+    y_offset = 50
+    cv2.putText(annotated, f"Time: {frame_time:.2f}s", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    for i, move in enumerate(moves):
+        cv2.putText(annotated, f"Move: {move}", (10, y_offset + i * 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    
+    return annotated
 
-    def annotate_frame(self, frame, moves, frame_time, points, M):
-        annotated = frame.copy()
-        for i in range(4):
-            pt1 = tuple(points[i].astype(int))
-            pt2 = tuple(points[(i + 1) % 4].astype(int))
-            cv2.line(annotated, pt1, pt2, (0, 255, 0), 2)
-        y_offset = 50
-        cv2.putText(annotated, f"Time: {frame_time:.2f}s", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-        for i, move in enumerate(moves):
-            cv2.putText(annotated, f"Move: {move}", (10, y_offset + i * 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        return annotated
-
-    def update_canvas(self, frame):
-        max_width, max_height = 640, 360
-        h, w = frame.shape[:2]
-        if w > max_width or h > max_height:
-            scale = min(max_width / w, max_height / h)
-            new_w, new_h = int(w * scale), int(h * scale)
-            frame = cv2.resize(frame, (new_w, new_h))
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(frame_rgb)
-        photo = ImageTk.PhotoImage(image=image)
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=photo)
-        self.canvas.image = photo
-
-    def start_processing(self):
-        if not self.video_path:
-            messagebox.showerror("Error", "Please select a video file")
-            return
-        try:
-            self.get_video_duration()
-            self.running = True
-            self.paused = False
-            self.start_button.config(state=tk.DISABLED)
-            self.pause_button.config(state=tk.NORMAL)
-            self.stop_button.config(state=tk.NORMAL)
-            self.status_label.config(text="Status: Processing")
-            self.fen_text.delete(1.0, tk.END)
-            self.result_queue = queue.Queue()  # Reset queue
-            self.process_thread = threading.Thread(target=self.process_frames)
-            self.display_thread = threading.Thread(target=self.display_frames)
-            self.process_thread.start()
-            self.display_thread.start()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to start processing: {e}")
-            self.status_label.config(text="Status: Error")
-
-    def toggle_pause(self):
-        if self.running:
-            self.paused = not self.paused
-            self.pause_button.config(text="Resume" if self.paused else "Pause")
-            self.status_label.config(text=f"Status: {'Paused' if self.paused else 'Processing'}")
-
-    def stop_processing(self):
-        if self.running:
-            self.running = False
-            self.paused = False
-            self.start_button.config(state=tk.NORMAL)
-            self.pause_button.config(state=tk.DISABLED, text="Pause")
-            self.stop_button.config(state=tk.DISABLED)
-            self.status_label.config(text="Status: Stopped")
-            if self.process_thread:
-                self.process_thread.join()
-            if self.display_thread:
-                self.display_thread.join()
-
-    def process_frames(self):
-        try:
-            start_time, end_time, frame_interval = 300, 450, 1.0
-            duration = self.get_video_duration()
-            if end_time > duration:
-                end_time = duration
-            frames, frame_times, fps = self.extract_frames_in_duration(start_time, end_time, frame_interval)
-            templates = self.load_templates()
-            prev_board = None
-            prev_frame = None
-            total_frames = len(frames)
-            ssim_threshold = 0.95
-
-            for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
-                if not self.running:
+def main(start_time=0, end_time=10, frame_interval=1.0):
+    out = None
+    try:
+        # GUI for video selection
+        video_path = select_video_file()
+        if not video_path:
+            logging.error("No video file selected")
+            raise ValueError("No video file selected")
+        
+        if not os.path.exists(video_path):
+            logging.error(f"Video file does not exist: {video_path}")
+            raise ValueError(f"Video file does not exist: {video_path}")
+        
+        duration = get_video_duration(video_path)
+        if end_time > duration:
+            logging.warning(f"Requested end_time ({end_time}s) exceeds video duration ({duration}s). Setting end_time to {duration}s.")
+            end_time = duration
+        
+        # Initialize video capture for initial display
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logging.error(f"Cannot open video file: {video_path}")
+            raise ValueError("Cannot open video file")
+        
+        # Display video until chessboard is detected or manually selected
+        window_name = "Chessboard Detection (Press 'q' to select corners manually)"
+        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        board_detected = False
+        board_points = None
+        manual_selection = False
+        
+        while cap.isOpened() and not board_detected:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Try automatic chessboard detection
+            crop, points = extract_digital_board(frame, debug=True)
+            if points is not None:
+                # Show detected board and prompt for confirmation
+                display_frame = frame.copy()
+                points_int = points.astype(np.int32).reshape(-1, 1, 2)
+                cv2.polylines(display_frame, [points_int], True, (0, 255, 0), 2)
+                cv2.putText(display_frame, "Chessboard detected. Press 'a' to accept, 'c' for hardcoded ROI, 'm' for manual ROI", 
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                cv2.imshow(window_name, display_frame)
+                
+                while True:
+                    key = cv2.waitKey(0) & 0xFF
+                    if key == ord('a'):
+                        board_detected = True
+                        board_points = points
+                        logging.info("Accepted automatically detected chessboard points")
+                        break
+                    elif key == ord('c'):
+                        board_detected = True
+                        board_points = np.array([
+                            [1280, 240],  # top left
+                            [1879, 240],  # top right
+                            [1879, 836],  # bottom right
+                            [1280, 836]   # bottom left
+                        ], dtype="float32")
+                        logging.info("Using hardcoded chessboard points")
+                        break
+                    elif key == ord('m'):
+                        manual_selection = True
+                        board_points = select_board_corners(frame)
+                        board_detected = True
+                        logging.info("Manually selected chessboard points")
+                        break
+            else:
+                # If automatic detection fails, show frame and allow manual selection
+                logging.info("Automatic chessboard detection failed")
+                cv2.imshow(window_name, frame)
+                key = cv2.waitKey(30) & 0xFF
+                if key == ord('q'):
+                    manual_selection = True
+                    board_points = select_board_corners(frame)
+                    board_detected = True
                     break
-                while self.paused:
-                    if not self.running:
-                        break
-                try:
-                    ssim_score = self.compute_frame_difference(prev_frame, frame)
-                    process_frame = (prev_frame is None or ssim_score < ssim_threshold)
-                    logging.info(f"Frame {i} at {frame_time:.2f}s: SSIM={ssim_score:.4f}, Process={process_frame}")
-                    
-                    if process_frame:
-                        points = np.array([[1280, 240], [1879, 240], [1879, 836], [1280, 836]], dtype="float32")
-                        crop = frame
-                        board, M = self.warp_board(crop, points)
-                        squares, square_names = self.split_into_squares(board)
-                        fen, curr_board = self.generate_fen(squares, square_names, templates, i)
-                        moves = self.detect_movement(prev_board, curr_board) if prev_board is not None else []
-                        annotated_frame = self.annotate_frame(frame, moves, frame_time, points, M)
-                        self.result_queue.put((annotated_frame, frame_time, fen, moves, i, total_frames))
-                        prev_board = curr_board
-                    else:
-                        annotated_frame = self.annotate_frame(frame, [], frame_time, points, M)
-                        self.result_queue.put((annotated_frame, frame_time, None, [], i, total_frames))
-                    prev_frame = frame
-                except Exception as e:
-                    logging.error(f"Frame error at {frame_time:.2f}s: {e}")
-                    self.result_queue.put((frame, frame_time, None, [], i, total_frames))
-                    continue
-            self.result_queue.put(None)  # Signal end of processing
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Processing error: {e}"))
-            self.running = False
+        
+        cap.release()
+        cv2.destroyAllWindows()
+        
+        if not board_detected:
+            logging.info("No chessboard detected automatically, using hardcoded points")
+            board_points = np.array([
+                [1280, 240],  # top left
+                [1879, 240],  # top right
+                [1879, 836],  # bottom right
+                [1280, 836]   # bottom left
+            ], dtype="float32")
+        
+        # Extract frames for processing
+        frames, frame_times, fps = extract_frames_in_duration(video_path, start_time, end_time, frame_interval)
+        logging.info(f"Extracted {len(frames)} frames from {start_time}s to {end_time}s")
+        
+        # Initialize video writer
+        output_path = "annotated_chess_moves.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        height, width = frames[0].shape[:2]
+        out = cv2.VideoWriter(output_path, fourcc, fps / frame_interval, (width, height))
+        
+        templates = load_templates()
+        
+        fen_results = []
+        prev_board = None
+        prev_fen = None
+        window_name = "Chessboard with Moves"
+        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        
+        for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
+            logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {i})")
+            
+            global match_result
+            match_result = []
+            
+            try:
+                crop = frame
+                board, M = warp_board(crop, board_points)
+                frame_debug_dir = f'./debug_frames/frame_{i:03d}'
+                os.makedirs(frame_debug_dir, exist_ok=True)
+                cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
 
-    def display_frames(self):
-        try:
-            output_path = "annotated_chess_moves.mp4"
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            first_frame = None
-            while first_frame is None and self.running:
-                try:
-                    item = self.result_queue.get(timeout=1)
-                    if item is None:
-                        break
-                    first_frame = item[0]
-                except queue.Empty:
-                    continue
-            if first_frame is None:
-                return
-            height, width = first_frame.shape[:2]
-            out = cv2.VideoWriter(output_path, fourcc, 30.0, (width, height))  # Assume 30 FPS for output
-            fen_results = []
+                squares, square_names, square_positions = split_into_squares(board, debug_dir=frame_debug_dir)
+                fen, curr_board = generate_fen(squares, square_names, templates, frame_idx=i, debug=True)
+                logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
+                
+                moves = []
+                if prev_fen is not None and fen != prev_fen:
+                    moves = detect_movement(prev_board, curr_board)
+                    logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
+                
+                annotated_frame = annotate_frame(frame, moves, frame_time, board_points, M)
+                cv2.imshow(window_name, annotated_frame)
+                if cv2.waitKey(100) & 0xFF == ord('q'):
+                    logging.info("User terminated video display with 'q' key")
+                    break
+                
+                out.write(annotated_frame)
+                
+                fen_results.append((frame_time, fen, moves))
+                prev_board = curr_board
+                prev_fen = fen
+            
+            except ValueError as e:
+                logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
+                out.write(frame)
+                continue
+        
+        print("\nFEN and Move Results:")
+        for frame_time, fen, moves in fen_results:
+            print(f"Time {frame_time:.2f}s: {fen}")
+            if moves:
+                print(f"  Moves: {', '.join(moves)}")
 
-            while self.running:
-                try:
-                    item = self.result_queue.get(timeout=1)
-                    if item is None:
-                        break
-                    annotated_frame, frame_time, fen, moves, frame_idx, total_frames = item
-                    self.update_canvas(annotated_frame)
-                    out.write(annotated_frame)
-                    if fen is not None:
-                        fen_results.append((frame_time, fen, moves))
-                    self.fen_text.delete(1.0, tk.END)
-                    for ft, fen, mv in fen_results:
-                        self.fen_text.insert(tk.END, f"Time {ft:.2f}s: {fen}\n")
-                        if mv:
-                            self.fen_text.insert(tk.END, f"  Moves: {', '.join(mv)}\n")
-                    self.progress["value"] = (frame_idx + 1) / total_frames * 100
-                    self.status_label.config(text=f"Status: Processing frame {frame_idx + 1}/{total_frames}")
-                    self.root.update()
-                except queue.Empty:
-                    if not self.running:
-                        break
-                    continue
+    except Exception as e:
+        logging.error(f"Video processing error: {e}")
+        print(f"Failed to process video: {e}")
+    finally:
+        if out is not None:
             out.release()
-            if self.running:
-                self.root.after(0, lambda: self.status_label.config(text="Status: Processing Complete"))
-                self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
-                self.root.after(0, lambda: self.pause_button.config(state=tk.DISABLED))
-                self.root.after(0, lambda: self.stop_button.config(state=tk.DISABLED))
-                self.running = False
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Display error: {e}"))
-            self.running = False
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = ChessVideoGUI(root)
-    root.mainloop()
+    main(start_time=150, end_time=200, frame_interval=1.0)
