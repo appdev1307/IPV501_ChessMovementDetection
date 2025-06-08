@@ -7,14 +7,75 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-#match result
+# Match result
 match_result = []
-
-#UNIT Test 1
-
 
 # Erosion kernel
 EROSION_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+
+def get_video_duration(video_path):
+    """Get the duration of a video in seconds."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logging.error(f"Cannot open video file: {video_path}")
+        raise ValueError("Cannot open video file")
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    cap.release()
+    
+    if fps <= 0:
+        logging.error("Invalid FPS value in video")
+        raise ValueError("Invalid FPS value")
+    
+    duration = frame_count / fps
+    logging.info(f"Video duration: {duration:.2f} seconds")
+    return duration
+
+def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=1.0):
+    """Extract frames from a video within a specified duration at given intervals."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logging.error(f"Cannot open video file: {video_path}")
+        raise ValueError("Cannot open video file")
+    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        logging.error("Invalid FPS value in video")
+        raise ValueError("Invalid FPS value")
+    
+    # Validate duration
+    duration = get_video_duration(video_path)
+    if start_time < 0 or end_time > duration or start_time >= end_time:
+        logging.error(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
+        raise ValueError(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
+    
+    start_frame = int(start_time * fps)
+    end_frame = int(end_time * fps)
+    frame_step = max(1, int(frame_interval * fps))  # Ensure at least 1 frame step
+    
+    frames = []
+    frame_times = []
+    
+    for frame_num in range(start_frame, end_frame + 1, frame_step):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ret, frame = cap.read()
+        if not ret:
+            logging.warning(f"Failed to extract frame {frame_num} from video")
+            continue
+        
+        frame_time = frame_num / fps
+        logging.info(f"Extracted frame at {frame_time:.2f} seconds (frame {frame_num})")
+        frames.append(frame)
+        frame_times.append(frame_time)
+    
+    cap.release()
+    
+    if not frames:
+        logging.error(f"No frames extracted in the specified duration: {start_time}s to {end_time}s")
+        raise ValueError("No frames extracted in the specified duration")
+    
+    return frames, frame_times, fps
 
 def order_points(pts):
     rect = np.zeros((4, 2), dtype="float32")
@@ -71,32 +132,38 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
             logging.error(f"Template for {p} not found at {path}")
             raise ValueError(f"Template for {p} not found at {path}")
 
-        resized = cv2.resize(img, (80, 80))  # Changed from (68, 68) to (80, 80)
+        resized = cv2.resize(img, (80, 80))
         eroded = cv2.erode(resized, EROSION_KERNEL, iterations=1)
         templates[p] = eroded
 
         if debug:
             cv2.imwrite(os.path.join(debug_dir, f"{p}_eroded.png"), eroded)
-            #logging.info(f"Saved eroded template for {p}")
 
     return templates
 
-def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
+def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug=False):
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
         return None
 
     square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
-    square_resized = cv2.resize(square_gray, (80, 80))  # Changed from (68, 68) to (80, 80)
+    square_resized = cv2.resize(square_gray, (80, 80))
     square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
 
     max_val = 0
     best_match = None
+    debug_frames = []
 
     for piece, template in templates.items():
         try:
             res = cv2.matchTemplate(square_resized, template, cv2.TM_CCOEFF_NORMED)
             _, val, _, _ = cv2.minMaxLoc(res)
+            if debug:
+                vis = np.hstack([square_resized, template])
+                vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+                cv2.putText(vis_bgr, f"Piece: {piece} Score: {val:.2f}", (5, 64),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                debug_frames.append(vis_bgr)
             if val > max_val:
                 max_val = val
                 best_match = piece
@@ -104,17 +171,19 @@ def match_piece(square_img, img_name, templates, threshold=0.6, debug=False):
             logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
             continue
 
-    #logging.info(f"{img_name} match result: best={best_match}, score={max_val:.4f}")
     if max_val >= threshold:
         if debug:
-            os.makedirs('./debug_frames/match', exist_ok=True)
-            vis = np.hstack([square_resized, templates[best_match]])
-            vis_bgr = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
-            cv2.putText(vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
+            frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
+            os.makedirs(frame_debug_dir, exist_ok=True)
+            for idx, debug_img in enumerate(debug_frames):
+                piece_name = list(templates.keys())[idx]
+                #cv2.imwrite(f'{frame_debug_dir}/{img_name}_match_{piece_name}.png', debug_img)
+            best_vis = np.hstack([square_resized, templates[best_match]])
+            best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
+            cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            cv2.imwrite(f'./debug_frames/match/{img_name}_match.png', vis_bgr)
-
-            match_result.append(f"{img_name} match ={best_match}")
+            cv2.imwrite(f'{frame_debug_dir}/{img_name}_best_match.png', best_vis_bgr)
+            match_result.append(f"{img_name} match = {best_match}")
         return best_match
     return None
 
@@ -133,12 +202,13 @@ def warp_board(crop, points):
     if warped.size == 0 or warped.shape[0] == 0 or warped.shape[1] == 0:
         raise ValueError("Warped image is empty or invalid")
 
-    return warped
+    return warped, M
 
 def split_into_squares(board_img, debug_dir="./debug_frames"):
     os.makedirs(debug_dir, exist_ok=True)
     squares = []
     square_names = []
+    square_positions = []
     height, width = board_img.shape[:2]
     dy, dx = 69, 69
 
@@ -160,19 +230,20 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
             gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
             resized = cv2.resize(gray, (68, 68))
             name = f'square_r{row}_c{col}.png'
-            cv2.imwrite(os.path.join(debug_dir, name), resized)
+            #cv2.imwrite(os.path.join(debug_dir, name), resized)
             squares.append(resized)
             square_names.append(name)
-    return squares, square_names
+            square_positions.append((row, col))
+    return squares, square_names, square_positions
 
-def generate_fen(squares, square_names, templates, debug=False):
+def generate_fen(squares, square_names, templates, frame_idx, debug=False):
     board = [['' for _ in range(8)] for _ in range(8)]
     fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
                'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
 
     for i, (square, name) in enumerate(zip(squares, square_names)):
         row, col = i // 8, i % 8
-        piece = match_piece(square, name, templates, debug=debug)
+        piece = match_piece(square, name, templates, frame_idx, debug=debug)
         board[row][col] = fen_map.get(piece, '') if piece else ''
 
     fen_rows = []
@@ -192,84 +263,182 @@ def generate_fen(squares, square_names, templates, debug=False):
         fen_rows.append(fen_row)
 
     fen = '/'.join(fen_rows) + ' w KQkq - 0 1'
-    return fen
+    return fen, board
 
-def main():
-    image_path = "./ChessBoard_Test.png"
-    image = cv2.imread(image_path)
-    if image is None:
-        logging.error(f"Cannot load image at {image_path}")
-        return
-    logging.info(f"Input image shape: {image.shape}")
+def detect_movement(prev_board, curr_board):
+    """Detect chess piece movement between two board states."""
+    moves = []
+    for row in range(8):
+        for col in range(8):
+            prev_piece = prev_board[row][col]
+            curr_piece = curr_board[row][col]
+            if prev_piece != curr_piece:
+                # Piece appeared or changed
+                if prev_piece == '' and curr_piece != '':
+                    # Piece moved to this square
+                    to_square = f"{chr(97 + col)}{8 - row}"
+                    # Find where the piece came from
+                    for r in range(8):
+                        for c in range(8):
+                            if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
+                                from_square = f"{chr(97 + c)}{8 - r}"
+                                move = f"{curr_piece}{from_square}-{to_square}"
+                                moves.append(move)
+                                break
+                # Piece disappeared (captured or moved)
+                elif prev_piece != '' and curr_piece == '':
+                    # Handled in the appearance case to avoid duplication
+                    continue
+                # Piece changed (e.g., promotion)
+                elif prev_piece != '' and curr_piece != '':
+                    to_square = f"{chr(97 + col)}{8 - row}"
+                    move = f"{prev_piece}{to_square}->{curr_piece}{to_square}"
+                    moves.append(move)
+    return moves
 
+def annotate_frame(frame, moves, frame_time, points, M):
+    """Annotate the frame with detected moves and frame time."""
+    annotated = frame.copy()
+    
+    # Transform board coordinates back to original image coordinates
+    dst = np.array([
+        [0, 0],
+        [551, 0],
+        [551, 551],
+        [0, 551]
+    ], dtype="float32")
+    M_inv = cv2.getPerspectiveTransform(dst, order_points(points))
+    
+    # Draw board outline
+    for i in range(4):
+        pt1 = tuple(points[i].astype(int))
+        pt2 = tuple(points[(i + 1) % 4].astype(int))
+        cv2.line(annotated, pt1, pt2, (0, 255, 0), 2)
+
+    # Annotate moves
+    y_offset = 50
+    cv2.putText(annotated, f"Time: {frame_time:.2f}s", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    for i, move in enumerate(moves):
+        cv2.putText(annotated, f"Move: {move}", (10, y_offset + i * 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    
+    return annotated
+
+def main(video_path, start_time=0, end_time=10, frame_interval=1.0, use_dynamic_board_detection=False):
     try:
-        fixed_points = np.array([
-            [1221, 247],
-            [1774, 247],
-            [1774, 803],
-            [1221, 803]
-        ], dtype="float32")
-
-        crop = image
-        logging.info(f"Warping board with fixed points: {fixed_points.tolist()}")
-        board = warp_board(crop, fixed_points)
-        logging.info(f"Warped board shape: {board.shape}")
-        os.makedirs('./debug_frames', exist_ok=True)
-        cv2.imwrite('./debug_frames/warped_board.png', board)
-
-        squares, square_names = split_into_squares(board)
+        # Validate video file existence
+        if not os.path.exists(video_path):
+            logging.error(f"Video file does not exist: {video_path}")
+            raise ValueError(f"Video file does not exist: {video_path}")
+        
+        # Validate duration
+        duration = get_video_duration(video_path)
+        if end_time > duration:
+            logging.warning(f"Requested end_time ({end_time}s) exceeds video duration ({duration}s). Setting end_time to {duration}s.")
+            end_time = duration
+        
+        # Extract frames within the specified duration
+        frames, frame_times, fps = extract_frames_in_duration(video_path, start_time, end_time, frame_interval)
+        logging.info(f"Extracted {len(frames)} frames from {start_time}s to {end_time}s")
+        
+        # Initialize video writer
+        output_path = "annotated_chess_moves.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        height, width = frames[0].shape[:2]
+        out = cv2.VideoWriter(output_path, fourcc, fps / frame_interval, (width, height))
+        
+        # Load templates once
         templates = load_templates("templates", debug_dir="debug_output", debug=True)
-        fen = generate_fen(squares, square_names, templates, debug=True)
-        logging.info(f"Generated FEN: {fen}")
+        
+        # Process each frame
+        fen_results = []
+        prev_board = None
+        window_name = "Chessboard with Moves"
+        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        
+        for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
+            logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {i})")
+            
+            # Reset match_result for each frame
+            global match_result
+            match_result = []
+            
+            try:
+                # Try dynamic board detection if enabled
+                if use_dynamic_board_detection:
+                    crop, points = extract_digital_board(frame, debug=True)
+                    if points is None:
+                        logging.warning(f"No board detected in frame at {frame_time:.2f}s, skipping")
+                        out.write(frame)  # Write original frame if no board detected
+                        continue
+                else:
+                    # Use hardcoded points
+                    points = np.array([
+                        [1280, 240], # top left
+                        [1879, 240], # top right
+                        [1879, 836], # bottom right
+                        [1280, 836] # bottom left
+                    ], dtype="float32")
+                    crop = frame
 
+                logging.info(f"Warping board with points: {points.tolist()}")
+                board, M = warp_board(crop, points)
+                logging.info(f"Warped board shape: {board.shape}")
+                frame_debug_dir = f'./debug_frames/frame_{i:03d}'
+                os.makedirs(frame_debug_dir, exist_ok=True)
+                cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
 
-        #print(match_result)
-        # Unit Test 1
-        match_UT1 = []
-        match_UT1.append("square_r0_c4.png match =qb")
-        match_UT1.append("square_r0_c5.png match =rb")
-        match_UT1.append("square_r0_c6.png match =kb")
+                squares, square_names, square_positions = split_into_squares(board, debug_dir=frame_debug_dir)
+                fen, curr_board = generate_fen(squares, square_names, templates, frame_idx=i, debug=True)
+                logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
+                
+                # Detect movement
+                moves = []
+                if prev_board is not None:
+                    moves = detect_movement(prev_board, curr_board)
+                    logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
+                
+                # Annotate frame with moves
+                annotated_frame = annotate_frame(frame, moves, frame_time, points, M)
+                
+                # Display annotated frame
+                cv2.imshow(window_name, annotated_frame)
+                if cv2.waitKey(100) & 0xFF == ord('q'):
+                    logging.info("User terminated video display with 'q' key")
+                    break
+                
+                # Write to output video
+                #out.write(annotated_frame)
+                
+                fen_results.append((frame_time, fen, moves))
+                prev_board = curr_board
+            
+            except ValueError as e:
+                logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
+                out.write(frame)  # Write original frame on error
+                continue
+        
+        # Print all FEN results and moves
+        print("\nFEN and Move Results:")
+        for frame_time, fen, moves in fen_results:
+            print(f"Time {frame_time:.2f}s: {fen}")
+            if moves:
+                print(f"  Moves: {', '.join(moves)}")
 
-        match_UT1.append("square_r1_c2.png match =R")
-        match_UT1.append("square_r1_c4.png match =bb")
-        match_UT1.append("square_r1_c5.png match =pb")
-        match_UT1.append("square_r1_c6.png match =pb")
-        match_UT1.append("square_r1_c7.png match =pb")
-
-        match_UT1.append("square_r2_c0.png match =bb")
-        match_UT1.append("square_r2_c1.png match =pb")
-
-        match_UT1.append("square_r3_c0.png match =pb")
-        match_UT1.append("square_r3_c3.png match =rb")
-
-        match_UT1.append("square_r4_c0.png match =P")
-        match_UT1.append("square_r4_c4.png match =P")
-
-        match_UT1.append("square_r5_c1.png match =Q")
-        match_UT1.append("square_r5_c5.png match =N")
-        match_UT1.append("square_r5_c6.png match =P")
-        match_UT1.append("square_r5_c7.png match =B")
-
-        match_UT1.append("square_r6_c1.png match =P")
-        match_UT1.append("square_r6_c5.png match =P")
-        match_UT1.append("square_r6_c7.png match =P")
-
-        match_UT1.append("square_r7_c6.png match =K")
-
-        max_len = max(len(match_result), len(match_UT1))
-        UT1_failed = False
-        for i in range(max_len):
-            item1 = match_result[i] if i < len(match_result) else "<missing>"
-            item2 = match_UT1[i] if i < len(match_UT1) else "<missing>"
-            if item1 != item2:
-                print(f"Difference at index {i}: match_result = '{item1}', match_UT1 = '{item2}'")
-                UT1_failed = True
-
-        if UT1_failed == False:
-            print ("UT 1: passed")
-
-    except ValueError as e:
-        logging.error(f"Processing error: {e}")
+    except Exception as e:
+        logging.error(f"Video processing error: {e}")
+        print(f"Failed to process video: {e}")
+    finally:
+        # Release resources
+        out.release()
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    # Path to the local video file
+    video_path = "video.mp4.mkv"  # Replace with the actual path to your downloaded clip
+    start_time = 350  # Start at 0 seconds
+    end_time = 400   # End at 10 seconds
+    frame_interval = 1.0  # Process one frame per second
+    use_dynamic_board_detection = False  # Set to True to use dynamic board detection
+    main(video_path, start_time, end_time, frame_interval, use_dynamic_board_detection)
