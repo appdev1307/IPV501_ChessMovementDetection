@@ -92,8 +92,12 @@ def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=
     
     return frames, frame_times, fps
 
-def extract_digital_board(image, debug=False, square_size=69):
-    print('Detecting chessboard region from image...')
+import numpy as np
+import cv2
+import os
+
+def extract_digital_board(image, debug=False):
+    print('Detecting first chessboard square from image...')
     h, w = image.shape[:2]
     crop = image[0:h, 0:w]
 
@@ -106,14 +110,29 @@ def extract_digital_board(image, debug=False, square_size=69):
 
     thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
                                    cv2.THRESH_BINARY_INV, 11, 3)
+
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
     edges = cv2.Canny(closed, 50, 150)
 
+    contour_modes = [cv2.RETR_EXTERNAL, cv2.RETR_TREE]
     best_quad = None
 
-    for mode in [cv2.RETR_EXTERNAL, cv2.RETR_TREE]:
+    if debug:
+        os.makedirs('./debug_frames', exist_ok=True)
+        cv2.imwrite('./debug_frames/_1_gray.png', gray)
+        cv2.imwrite('./debug_frames/_2_blurred.png', blurred)
+        cv2.imwrite('./debug_frames/_3_thresh.png', thresh)
+        cv2.imwrite('./debug_frames/_4_closed.png', closed)
+        cv2.imwrite('./debug_frames/_5_edges.png', edges)
+
+    for mode in contour_modes:
         contours, _ = cv2.findContours(edges.copy(), mode, cv2.CHAIN_APPROX_SIMPLE)
+
+        if debug:
+            debug_img = crop.copy()
+            cv2.drawContours(debug_img, contours, -1, (0, 255, 0), 2)
+            cv2.imwrite(f'./debug_frames/_contours_mode_{mode}.png', debug_img)
 
         for c in sorted(contours, key=cv2.contourArea, reverse=True):
             perimeter = cv2.arcLength(c, True)
@@ -131,7 +150,7 @@ def extract_digital_board(image, debug=False, square_size=69):
                 ]
 
                 if min(side_lengths) < 50:
-                    continue
+                    continue  # Reject tiny quads
 
                 aspect_ratio = max(side_lengths) / min(side_lengths)
                 if 0.8 < aspect_ratio < 1.2:
@@ -141,34 +160,33 @@ def extract_digital_board(image, debug=False, square_size=69):
             break
 
     if best_quad is None:
-        print("No valid board contour found.")
+        print("No valid square detected.")
         return crop, None
 
-    # Use best_quad as top-left square
-    tl, tr, br, bl = best_quad
+    # Use known square size to calculate full board
+    square_w, square_h = 75, 75
+    board_w, board_h = 8 * square_w, 8 * square_h
 
-    # Compute direction vectors
-    dir_x = (tr - tl) / square_size
-    dir_y = (bl - tl) / square_size
+    top_left = best_quad[0]  # float32
 
-    # Project the entire 8x8 board
-    board_tl = tl
-    board_tr = tl + 8 * dir_x
-    board_bl = tl + 8 * dir_y
-    board_br = board_tr + 8 * dir_y
-
-    board_quad = np.array([board_tl, board_tr, board_br, board_bl], dtype=np.float32)
+    chessboard_corners = np.array([
+        top_left,
+        top_left + np.array([board_w, 0]),            # top-right
+        top_left + np.array([board_w, board_h]),      # bottom-right
+        top_left + np.array([0, board_h])             # bottom-left
+    ], dtype=np.float32)
 
     if debug:
-        dbg = crop.copy()
-        for pt in board_quad:
-            cv2.circle(dbg, tuple(np.int32(pt)), 5, (0, 255, 255), -1)
-        cv2.polylines(dbg, [np.int32(board_quad)], isClosed=True, color=(0, 0, 255), thickness=2)
-        os.makedirs('./debug_frames', exist_ok=True)
-        cv2.imwrite('./debug_frames/_final_board.png', dbg)
+        debug_img = crop.copy()
+        cv2.polylines(debug_img, [best_quad.astype(int)], True, (255, 0, 0), 3)
+        cv2.polylines(debug_img, [chessboard_corners.astype(int)], True, (0, 0, 255), 3)
+        cv2.imwrite('./debug_frames/_detected_squares.png', debug_img)
 
-    print(f"Detected board corners from first square: {board_quad}")
-    return crop, board_quad
+    print(f"First square corners: {best_quad}")
+    print(f"Computed chessboard corners: {chessboard_corners}")
+
+    return crop, chessboard_corners
+
 
 def order_points(pts):
     """ Return consistent order: top-left, top-right, bottom-right, bottom-left """
@@ -181,6 +199,7 @@ def order_points(pts):
     rect[1] = pts[np.argmin(diff)]   # top-right
     rect[3] = pts[np.argmax(diff)]   # bottom-left
     return rect
+
 
 def mouse_callback(event, x, y, flags, param):
     """Callback for mouse clicks to select chessboard corners."""
