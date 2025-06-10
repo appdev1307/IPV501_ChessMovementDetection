@@ -232,9 +232,28 @@ def select_board_corners(frame):
         logging.error("Exactly 4 points must be selected")
         raise ValueError("Exactly 4 points must be selected")
 
-def load_templates(template_dir="templates", debug_dir="debug_output", debug=False):
+def blur_border(img, border_size=10, blur_kernel=(15, 15)):
+    """Apply a blurred border to an image."""
+    h, w = img.shape[:2]
+    blurred = cv2.GaussianBlur(img, blur_kernel, 0)
+
+    mask = np.zeros((h, w), dtype=np.float32)
+    cv2.rectangle(mask, (border_size, border_size), (w - border_size, h - border_size), 1, -1)
+    mask = cv2.GaussianBlur(mask, (border_size * 2 + 1, border_size * 2 + 1), 0)
+
+    if len(img.shape) == 2:
+        result = img.astype(np.float32) * mask + blurred.astype(np.float32) * (1 - mask)
+    else:
+        result = img.astype(np.float32)
+        for c in range(3):
+            result[..., c] = result[..., c] * mask + blurred[..., c] * (1 - mask)
+
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+
+def load_templates(template_dir="templates", debug_dir="debug_output", debug=True):
     """Load chess piece templates."""
-    pieces = ["P", "N", "B", "R", "Q", "K", "pb", "nb", "bb", "rb", "qb", "kb"]
+    pieces = ["P", "P_g", "N", "N_g", "B", "B_g", "R", "R_g", "Q", "Q_g", "K", "K_g", "pb", "pb_g", "nb", "nb_g", "bb", "bb_g", "rb","rb_g", "qb", "qb_g", "kb", "kb_g"]
     templates = {}
     os.makedirs(debug_dir, exist_ok=True)
 
@@ -247,14 +266,17 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Fal
 
         resized = cv2.resize(img, (80, 80))
         eroded = cv2.erode(resized, EROSION_KERNEL, iterations=1)
-        templates[p] = eroded
+        blurred = blur_border(eroded, border_size=6)
+        templates[p] = blurred
+
+
 
         if debug:
             cv2.imwrite(os.path.join(debug_dir, f"{p}_eroded.png"), eroded)
 
     return templates
 
-def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug=False):
+def match_piece(square_img, img_name, templates, frame_idx, threshold=0.5, debug=False):
     """Match a chess piece in a square image using template matching."""
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
@@ -263,6 +285,8 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug
     square_gray = square_img if len(square_img.shape) == 2 else cv2.cvtColor(square_img, cv2.COLOR_BGR2GRAY)
     square_resized = cv2.resize(square_gray, (80, 80))
     square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
+    square_resized = blur_border(square_resized, border_size=6)
+
 
     max_val = 0
     best_match = None
@@ -289,8 +313,8 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug
         if debug:
             frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
             os.makedirs(frame_debug_dir, exist_ok=True)
-            for piece, debug_img in debug_frames:
-                cv2.imwrite(f'{frame_debug_dir}/{piece}_match.png', debug_img)
+            #for piece, debug_img in debug_frames:
+            #    cv2.imwrite(f'{frame_debug_dir}/{piece}_match.png', debug_img)
             best_vis = np.hstack([square_resized, templates[best_match]])
             best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
             cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
@@ -319,13 +343,13 @@ def warp_board(crop, points):
     return warped, M
 
 def split_into_squares(board_img, debug_dir="./debug_frames"):
-    """Split the warped board into 8x8 squares."""
+    """Split the warped board into 8x8 squares and save debug images."""
     os.makedirs(debug_dir, exist_ok=True)
     squares = []
     square_names = []
     square_positions = []
     height, width = board_img.shape[:2]
-    dy, dx = 69, 69
+    dy, dx = 69, 69 # to be calibrated or algorithm to detect them 
 
     if height < 8 * dy or width < 8 * dx:
         logging.warning(f"Warped board too small: {width}x{height}, need at least {8*dx}x{8*dy}")
@@ -343,8 +367,11 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
                 logging.warning(f"Empty or undersized square at row {row}, col {col}")
                 continue
             gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
-            resized = cv2.resize(gray, (68, 68))
+            resized = cv2.resize(gray, (80, 80))
             name = f'square_r{row}_c{col}.png'
+            # Save debug image
+            debug_path = os.path.join(debug_dir, name)
+            #cv2.imwrite(debug_path, resized)
             squares.append(resized)
             square_names.append(name)
             square_positions.append((row, col))
@@ -651,4 +678,4 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main(start_time=150, end_time=200, frame_interval=1.0)
+    main(start_time=150, end_time=200, frame_interval=0.5)
