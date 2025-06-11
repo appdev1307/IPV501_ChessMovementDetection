@@ -250,15 +250,15 @@ def blur_border(img, border_size=10, blur_kernel=(15, 15)):
 
     return np.clip(result, 0, 255).astype(np.uint8)
 
-
 def load_templates(template_dir="templates", debug_dir="debug_output", debug=True):
     """Load chess piece templates."""
-    pieces = ["P", "P_g", "N", "N_g", "B", "B_g", "R", "R_g", "Q", "Q_g", "K", "K_g", "pb", "pb_g", "nb", "nb_g", "bb", "bb_g", "rb","rb_g", "qb", "qb_g", "kb", "kb_g"]
+    pieces = ["P", "P_g", "N", "N_g", "B", "B_g", "R", "R_g", "Q", "Q_g", "K", "K_g", 
+              "pb", "pb_g", "nb", "nb_g", "bb", "bb_g", "rb", "rb_g", "qb", "qb_g", "kb", "kb_g"]
     templates = {}
     os.makedirs(debug_dir, exist_ok=True)
 
     for p in pieces:
-        path = os.path.join(template_dir, f"{p}.png")
+        path = os.path.join(template_dir, f"{p}.png")  # Corrected file extension
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             logging.error(f"Template for {p} not found at {path}")
@@ -269,14 +269,12 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Tru
         blurred = blur_border(eroded, border_size=6)
         templates[p] = blurred
 
-
-
         if debug:
             cv2.imwrite(os.path.join(debug_dir, f"{p}_eroded.png"), eroded)
 
     return templates
 
-def match_piece(square_img, img_name, templates, frame_idx, threshold=0.7, debug=False):
+def match_piece(square_img, img_name, templates, frame_idx, threshold=0.6, debug=False):
     """Match a chess piece in a square image using template matching."""
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
@@ -286,7 +284,6 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.7, debug
     square_resized = cv2.resize(square_gray, (80, 80))
     square_resized = cv2.erode(square_resized, EROSION_KERNEL, iterations=1)
     square_resized = blur_border(square_resized, border_size=6)
-
 
     max_val = 0
     best_match = None
@@ -309,18 +306,17 @@ def match_piece(square_img, img_name, templates, frame_idx, threshold=0.7, debug
             logging.error(f"matchTemplate error for {piece} in {img_name}: {e}")
             continue
 
+
     if max_val >= threshold:
-        if debug:
+        if False:
             frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}/match'
             os.makedirs(frame_debug_dir, exist_ok=True)
-            #for piece, debug_img in debug_frames:
-            #    cv2.imwrite(f'{frame_debug_dir}/{piece}_match.png', debug_img)
             best_vis = np.hstack([square_resized, templates[best_match]])
             best_vis_bgr = cv2.cvtColor(best_vis, cv2.COLOR_GRAY2BGR)
             cv2.putText(best_vis_bgr, f"{best_match} ({max_val:.2f})", (5, 64),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
             cv2.imwrite(f'{frame_debug_dir}/{img_name}_best_match.png', best_vis_bgr)
-            match_result.append(f"{img_name} match = {best_match}")
+            match_result.append(f"{img_name} match = {best_match}") 
         return best_match
     return None
 
@@ -349,7 +345,7 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
     square_names = []
     square_positions = []
     height, width = board_img.shape[:2]
-    dy, dx = 69, 69 # to be calibrated or algorithm to detect them 
+    dy, dx = 69, 69  # To be calibrated or algorithm to detect them 
 
     if height < 8 * dy or width < 8 * dx:
         logging.warning(f"Warped board too small: {width}x{height}, need at least {8*dx}x{8*dy}")
@@ -369,7 +365,6 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
             gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY) if len(square.shape) == 3 else square
             resized = cv2.resize(gray, (80, 80))
             name = f'square_r{row}_c{col}.png'
-            # Save debug image
             debug_path = os.path.join(debug_dir, name)
             #cv2.imwrite(debug_path, resized)
             squares.append(resized)
@@ -378,16 +373,61 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
     return squares, square_names, square_positions
 
 def generate_fen(squares, square_names, templates, frame_idx, debug=False):
-    """Generate FEN string from the board squares."""
-    board = [['' for _ in range(8)] for _ in range(8)]
-    fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
-               'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
+    """
+    Generate FEN string from the board squares.
 
+    Args:
+        squares: List of square images (80x80 grayscale, preprocessed).
+        square_names: List of square names (e.g., 'square_r0_c0.png').
+        templates: Dictionary of preprocessed template images from load_templates.
+        frame_idx: Index of the current frame for debugging.
+        debug: Boolean to enable debug outputs.
+
+    Returns:
+        tuple: (FEN string, 8x8 board state list)
+    """
+    board = [['' for _ in range(8)] for _ in range(8)]
+    fen_map = {
+        'P': 'P', 'P_g': 'P', 'N': 'N', 'N_g': 'N', 'B': 'B', 'B_g': 'B',
+        'R': 'R', 'R_g': 'R', 'Q': 'Q', 'Q_g': 'Q', 'K': 'K', 'K_g': 'K',
+        'pb': 'p', 'pb_g': 'p', 'nb': 'n', 'nb_g': 'n', 'bb': 'b', 'bb_g': 'b',
+        'rb': 'r', 'rb_g': 'r', 'qb': 'q', 'qb_g': 'q', 'kb': 'k', 'kb_g': 'k'
+    }
+
+    # Detect pieces in each square
     for i, (square, name) in enumerate(zip(squares, square_names)):
         row, col = i // 8, i % 8
-        piece = match_piece(square, name, templates, frame_idx, debug=debug)
-        board[row][col] = fen_map.get(piece, '') if piece else ''
+        piece = match_piece(square, name, templates, frame_idx, threshold=0.6, debug=debug)
+        if piece and piece in fen_map:
+            board[row][col] = fen_map[piece]
+            if debug:
+                logging.debug(f"Square {name} (r{row}, c{col}): Detected {piece} -> {fen_map[piece]}")
+        else:
+            board[row][col] = ''
+            if debug:
+                logging.debug(f"Square {name} (r{row}, c{col}): No piece detected")
 
+    # Validate piece counts to catch preprocessing errors
+    piece_counts = {}
+    for row in board:
+        for piece in row:
+            if piece:
+                piece_counts[piece] = piece_counts.get(piece, 0) + 1
+
+    # Check for plausible piece counts (e.g., max 8 pawns per side)
+    max_counts = {'P': 8, 'p': 8, 'N': 2, 'n': 2, 'B': 2, 'b': 2,
+                  'R': 2, 'r': 2, 'Q': 9, 'q': 9, 'K': 1, 'k': 1}  # Allowing promoted queens
+    for piece, count in piece_counts.items():
+        if count > max_counts.get(piece, 0):
+            logging.warning(f"Invalid piece count for {piece}: {count} exceeds maximum {max_counts.get(piece, 0)}")
+            if debug:
+                frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}'
+                os.makedirs(frame_debug_dir, exist_ok=True)
+                with open(f'{frame_debug_dir}/piece_counts.txt', 'w') as f:
+                    f.write(f"Invalid piece counts: {piece_counts}\n")
+            return None, board  # Return None FEN to indicate error
+
+    # Generate FEN string
     fen_rows = []
     for row in board:
         empty = 0
@@ -405,32 +445,129 @@ def generate_fen(squares, square_names, templates, frame_idx, debug=False):
         fen_rows.append(fen_row)
 
     fen = '/'.join(fen_rows) + ' w KQkq - 0 1'
+    if debug:
+        logging.info(f"Generated FEN for frame {frame_idx}: {fen}")
+        frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}'
+        os.makedirs(frame_debug_dir, exist_ok=True)
+        with open(f'{frame_debug_dir}/board_state.txt', 'w') as f:
+            f.write(f"FEN: {fen}\n")
+            for row in board:
+                f.write(f"{row}\n")
+
     return fen, board
 
-def detect_movement(prev_board, curr_board):
-    """Detect chess piece movement between two board states."""
+def detect_movement(prev_board, curr_board, prev_boards=None, window_size=3):
+    """
+    Detect chess piece movement between two board states with temporal context.
+    
+    Args:
+        prev_board: Previous board state (8x8 list of piece symbols or '')
+        curr_board: Current board state (8x8 list of piece symbols or '')
+        prev_boards: List of previous board states for temporal context (optional)
+        window_size: Number of previous frames to consider for move confirmation
+    
+    Returns:
+        List of detected moves in algebraic notation (e.g., 'pe2-e4', 'Nxd4')
+    """
     moves = []
+    piece_counts = {}  # Track piece counts to detect captures or occlusions
+    fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
+               'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
+
+    # Initialize piece counts for current board
+    for row in curr_board:
+        for piece in row:
+            if piece:
+                piece_counts[piece] = piece_counts.get(piece, 0) + 1
+
+    # Compare with previous board
     for row in range(8):
         for col in range(8):
             prev_piece = prev_board[row][col]
             curr_piece = curr_board[row][col]
             if prev_piece != curr_piece:
+                to_square = f"{chr(97 + col)}{8 - row}"
+                # Case 1: Empty to piece (piece moved to this square)
                 if prev_piece == '' and curr_piece != '':
-                    to_square = f"{chr(97 + col)}{8 - row}"
+                    # Find where the piece came from
                     for r in range(8):
                         for c in range(8):
                             if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
                                 from_square = f"{chr(97 + c)}{8 - r}"
-                                move = f"{curr_piece}{from_square}-{to_square}"
+                                move = f"{fen_map.get(curr_piece, curr_piece)}{from_square}-{to_square}"
+                                if prev_boards and not confirm_move(prev_boards, curr_piece, from_square, to_square, window_size):
+                                    continue
                                 moves.append(move)
                                 break
+                # Case 2: Piece to empty (piece moved away, handled above)
                 elif prev_piece != '' and curr_piece == '':
                     continue
+                # Case 3: Piece to different piece (capture)
                 elif prev_piece != '' and curr_piece != '':
-                    to_square = f"{chr(97 + col)}{8 - row}"
-                    move = f"{prev_piece}{to_square}->{curr_piece}{to_square}"
-                    moves.append(move)
+                    from_square = None
+                    # Look for the source of curr_piece
+                    for r in range(8):
+                        for c in range(8):
+                            if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
+                                from_square = f"{chr(97 + c)}{8 - r}"
+                                break
+                    if from_square:
+                        move = f"{fen_map.get(curr_piece, curr_piece)}{from_square}x{to_square}"
+                        if prev_boards and not confirm_move(prev_boards, curr_piece, from_square, to_square, window_size):
+                            continue
+                        moves.append(move)
+                    else:
+                        logging.debug(f"Possible occlusion at {to_square}: {prev_piece} -> {curr_piece}")
+
+    # Validate piece counts to detect potential errors
+    prev_piece_counts = {}
+    for row in prev_board:
+        for piece in row:
+            if piece:
+                prev_piece_counts[piece] = prev_piece_counts.get(piece, 0) + 1
+    
+    for piece, count in piece_counts.items():
+        prev_count = prev_piece_counts.get(piece, 0)
+        if count > prev_count:
+            logging.debug(f"Piece {piece} count increased ({prev_count} -> {count}), possible misdetection")
+            moves = [m for m in moves if not m.startswith(fen_map.get(piece, piece))]
+
     return moves
+
+def confirm_move(prev_boards, piece, from_square, to_square, window_size):
+    """
+    Confirm a move by checking consistency across previous board states.
+    
+    Args:
+        prev_boards: List of previous board states
+        piece: Piece symbol (e.g., 'P', 'pb')
+        from_square: Starting square (e.g., 'e2')
+        to_square: Destination square (e.g., 'e4')
+        window_size: Number of frames to check
+    
+    Returns:
+        bool: True if move is consistent across frames
+    """
+    if not prev_boards or len(prev_boards) < window_size:
+        return True  # Not enough data, assume valid
+    
+    # Convert algebraic notation to board indices
+    def square_to_coords(square):
+        col = ord(square[0]) - ord('a')
+        row = 8 - int(square[1])
+        return row, col
+
+    from_row, from_col = square_to_coords(from_square)
+    to_row, to_col = square_to_coords(to_square)
+    
+    # Check if the move is consistent in recent frames
+    consistent_count = 0
+    for board in prev_boards[-window_size:]:
+        if (board[from_row][from_col] == piece and 
+            (board[to_row][to_col] != piece or board[to_row][to_col] == '')):
+            consistent_count += 1
+    
+    return consistent_count >= window_size // 2
 
 def annotate_frame(frame, moves, frame_time, points, M):
     """Annotate the frame with detected moves, frame time, and highlight move squares in green."""
@@ -453,26 +590,23 @@ def annotate_frame(frame, moves, frame_time, points, M):
     # Highlight move squares
     square_size = 552 / 8  # Size of each square in warped board (552x552)
     for move in moves:
-        # Parse move (e.g., "pe2-e4" or "Nd2-f3")
-        move = move[1:] if move[0] in 'prnbqkPRNBQK' else move  # Remove piece identifier
+        move = move[1:] if move[0] in 'prnbqkPRNBQK' else move
         if '-' in move:
             from_square, to_square = move.split('-')
-        elif '->' in move:
-            from_square, to_square = move.split('->')
+        elif 'x' in move:
+            from_square, to_square = move.split('x')
         else:
             continue
 
-        # Convert algebraic notation to board indices
         def square_to_coords(square):
-            col = ord(square[0]) - ord('a')  # e.g., 'e' -> 4
-            row = 8 - int(square[1])  # e.g., '2' -> 6 (0-based)
+            col = ord(square[0]) - ord('a')
+            row = 8 - int(square[1])
             return row, col
 
         try:
             from_row, from_col = square_to_coords(from_square)
             to_row, to_col = square_to_coords(to_square)
 
-            # Define square corners in warped board space
             for row, col in [(from_row, from_col), (to_row, to_col)]:
                 top_left = np.array([col * square_size, row * square_size], dtype=np.float32)
                 bottom_right = np.array([(col + 1) * square_size, (row + 1) * square_size], dtype=np.float32)
@@ -483,11 +617,8 @@ def annotate_frame(frame, moves, frame_time, points, M):
                     [top_left[0], bottom_right[1]]
                 ], dtype=np.float32).reshape(-1, 1, 2)
 
-                # Transform back to original frame
                 square_pts_orig = cv2.perspectiveTransform(square_pts, M_inv)
                 square_pts_orig = square_pts_orig.astype(int).reshape(-1, 2)
-
-                # Draw green rectangle
                 cv2.polylines(annotated, [square_pts_orig], isClosed=True, color=(0, 255, 0), thickness=2)
         except (ValueError, IndexError) as e:
             logging.warning(f"Failed to parse move '{move}': {e}")
@@ -539,10 +670,8 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
             if not ret:
                 break
             
-            # Try automatic chessboard detection
             crop, points = extract_digital_board(frame, debug=True)
             if points is not None:
-                # Show detected board and prompt for confirmation
                 display_frame = frame.copy()
                 points_int = points.astype(np.int32).reshape(-1, 1, 2)
                 cv2.polylines(display_frame, [points_int], True, (0, 255, 0), 2)
@@ -573,7 +702,6 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                         logging.info("Manually selected chessboard points")
                         break
             else:
-                # If automatic detection fails, show frame and allow manual selection
                 logging.info("Automatic chessboard detection failed")
                 cv2.imshow(window_name, frame)
                 key = cv2.waitKey(30) & 0xFF
@@ -609,8 +737,8 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
         fen_results = []
         prev_board = None
         prev_fen = None
-        window_name = "Chessboard with Moves (Press any key to continue, 'q' to quit)"
-        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+        board_history = []  # Store previous board states
+        window_size = max(3, int(0.5 / frame_interval))  # Adjust window size based on frame interval
         
         for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
             logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {i})")
@@ -627,16 +755,21 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
 
                 squares, square_names, square_positions = split_into_squares(board, debug_dir=frame_debug_dir)
                 fen, curr_board = generate_fen(squares, square_names, templates, frame_idx=i, debug=True)
+                
+                if fen is None:
+                    logging.warning(f"Skipping frame {i} at {frame_time:.2f}s due to invalid FEN")
+                    out.write(frame)
+                    continue
+                
                 logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
                 
                 moves = []
                 if prev_fen is not None and fen != prev_fen:
-                    moves = detect_movement(prev_board, curr_board)
+                    moves = detect_movement(prev_board, curr_board, board_history, window_size)
                     logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
                 
                 annotated_frame = annotate_frame(frame, moves, frame_time, board_points, M)
                 
-                # Display frame and pause if moves are detected
                 cv2.imshow(window_name, annotated_frame)
                 if moves:
                     cv2.putText(annotated_frame, "Move detected! Press any key to continue.", 
@@ -657,6 +790,9 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                 fen_results.append((frame_time, fen, moves))
                 prev_board = curr_board
                 prev_fen = fen
+                board_history.append(curr_board)
+                if len(board_history) > window_size:
+                    board_history.pop(0)
             
             except ValueError as e:
                 logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
@@ -678,4 +814,4 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main(start_time=150, end_time=200, frame_interval=0.5)
+    main(start_time=250, end_time=300, frame_interval=0.25)
