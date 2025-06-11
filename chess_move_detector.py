@@ -276,7 +276,7 @@ def load_templates(template_dir="templates", debug_dir="debug_output", debug=Tru
 
     return templates
 
-def match_piece(square_img, img_name, templates, frame_idx, threshold=0.5, debug=False):
+def match_piece(square_img, img_name, templates, frame_idx, threshold=0.7, debug=False):
     """Match a chess piece in a square image using template matching."""
     if square_img.size == 0 or square_img.shape[0] == 0 or square_img.shape[1] == 0:
         logging.warning(f"Empty square image: {img_name}")
