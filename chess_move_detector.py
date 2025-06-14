@@ -456,23 +456,26 @@ def generate_fen(squares, square_names, templates, frame_idx, debug=False):
 
     return fen, board
 
-def detect_movement(prev_board, curr_board, prev_boards=None, window_size=3):
+def detect_movement(prev_board, curr_board):
     """
-    Detect chess piece movement between two board states with temporal context.
+    Detect chess piece movement between two board states without validating move legality.
     
     Args:
         prev_board: Previous board state (8x8 list of piece symbols or '')
         curr_board: Current board state (8x8 list of piece symbols or '')
-        prev_boards: List of previous board states for temporal context (optional)
-        window_size: Number of previous frames to consider for move confirmation
     
     Returns:
         List of detected moves in algebraic notation (e.g., 'pe2-e4', 'Nxd4')
     """
+    import logging
     moves = []
     piece_counts = {}  # Track piece counts to detect captures or occlusions
-    fen_map = {'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
-               'pb': 'p', 'nb': 'n', 'bb': 'b', 'rb': 'r', 'qb': 'q', 'kb': 'k'}
+    fen_map = {
+        'P': 'P', 'P_g': 'P', 'N': 'N', 'N_g': 'N', 'B': 'B', 'B_g': 'B',
+        'R': 'R', 'R_g': 'R', 'Q': 'Q', 'Q_g': 'Q', 'K': 'K', 'K_g': 'K',
+        'pb': 'p', 'pb_g': 'p', 'nb': 'n', 'nb_g': 'n', 'bb': 'b', 'bb_g': 'b',
+        'rb': 'r', 'rb_g': 'r', 'qb': 'q', 'qb_g': 'q', 'kb': 'k', 'kb_g': 'k'
+    }
 
     # Initialize piece counts for current board
     for row in curr_board:
@@ -495,8 +498,6 @@ def detect_movement(prev_board, curr_board, prev_boards=None, window_size=3):
                             if prev_board[r][c] == curr_piece and curr_board[r][c] == '':
                                 from_square = f"{chr(97 + c)}{8 - r}"
                                 move = f"{fen_map.get(curr_piece, curr_piece)}{from_square}-{to_square}"
-                                if prev_boards and not confirm_move(prev_boards, curr_piece, from_square, to_square, window_size):
-                                    continue
                                 moves.append(move)
                                 break
                 # Case 2: Piece to empty (piece moved away, handled above)
@@ -513,8 +514,6 @@ def detect_movement(prev_board, curr_board, prev_boards=None, window_size=3):
                                 break
                     if from_square:
                         move = f"{fen_map.get(curr_piece, curr_piece)}{from_square}x{to_square}"
-                        if prev_boards and not confirm_move(prev_boards, curr_piece, from_square, to_square, window_size):
-                            continue
                         moves.append(move)
                     else:
                         logging.debug(f"Possible occlusion at {to_square}: {prev_piece} -> {curr_piece}")
@@ -633,6 +632,8 @@ def annotate_frame(frame, moves, frame_time, points, M):
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     
     return annotated
+
+from copy import deepcopy    
 
 def main(start_time=0, end_time=10, frame_interval=1.0):
     """Main function to process video and detect chess moves, pausing on movement."""
@@ -765,7 +766,7 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                 
                 moves = []
                 if prev_fen is not None and fen != prev_fen:
-                    moves = detect_movement(prev_board, curr_board, board_history, window_size)
+                    moves = detect_movement(prev_board, curr_board)
                     logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
                 
                 annotated_frame = annotate_frame(frame, moves, frame_time, board_points, M)
@@ -788,11 +789,11 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                 out.write(annotated_frame)
                 
                 fen_results.append((frame_time, fen, moves))
-                prev_board = curr_board
+                prev_board = deepcopy(curr_board)
                 prev_fen = fen
-                board_history.append(curr_board)
-                if len(board_history) > window_size:
-                    board_history.pop(0)
+                #board_history.append(deepcopy(curr_board))
+                #if len(board_history) > window_size:
+                #    board_history.pop(0)
             
             except ValueError as e:
                 logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
@@ -814,4 +815,4 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main(start_time=250, end_time=300, frame_interval=0.25)
+    main(start_time=200, end_time=350, frame_interval=0.5)
