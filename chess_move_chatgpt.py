@@ -49,50 +49,6 @@ def get_video_duration(video_path):
     logging.info(f"Video duration: {duration:.2f} seconds")
     return duration
 
-def extract_frames_in_duration(video_path, start_time, end_time, frame_interval=1.0):
-    """Extract frames from a video within a specified duration at given intervals."""
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        logging.error(f"Cannot open video file: {video_path}")
-        raise ValueError("Cannot open video file")
-    
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 0:
-        logging.error("Invalid FPS value in video")
-        raise ValueError("Invalid FPS value")
-    
-    duration = get_video_duration(video_path)
-    if start_time < 0 or end_time > duration or start_time >= end_time:
-        logging.error(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
-        raise ValueError(f"Invalid duration: start_time={start_time}s, end_time={end_time}s, video_duration={duration}s")
-    
-    start_frame = int(start_time * fps)
-    end_frame = int(end_time * fps)
-    frame_step = max(1, int(frame_interval * fps))
-    
-    frames = []
-    frame_times = []
-    
-    for frame_num in range(start_frame, end_frame + 1, frame_step):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-        ret, frame = cap.read()
-        if not ret:
-            logging.warning(f"Failed to extract frame {frame_num} from video")
-            continue
-        
-        frame_time = frame_num / fps
-        logging.info(f"Extracted frame at {frame_time:.2f} seconds (frame {frame_num})")
-        frames.append(frame)
-        frame_times.append(frame_time)
-    
-    cap.release()
-    
-    if not frames:
-        logging.error(f"No frames extracted in the specified duration: {start_time}s to {end_time}s")
-        raise ValueError("No frames extracted")
-    
-    return frames, frame_times, fps
-
 def extract_digital_board(image, debug=False):
     """Detect chessboard region from image."""
     print('Detecting first chessboard square from image...')
@@ -345,7 +301,7 @@ def split_into_squares(board_img, debug_dir="./debug_frames"):
     square_names = []
     square_positions = []
     height, width = board_img.shape[:2]
-    dy, dx = 69, 69  # To be calibrated or algorithm to detect them 
+    dy, dx = 69, 69
 
     if height < 8 * dy or width < 8 * dx:
         logging.warning(f"Warped board too small: {width}x{height}, need at least {8*dx}x{8*dy}")
@@ -456,7 +412,6 @@ def detect_movement(prev_board, curr_board):
     import logging
     changes = []
 
-    # Compare each square between previous and current boards
     for row in range(8):
         for col in range(8):
             prev_piece = prev_board[row][col]
@@ -464,7 +419,6 @@ def detect_movement(prev_board, curr_board):
             if prev_piece != curr_piece:
                 to_square = f"{chr(97 + col)}{8 - row}"
                 
-                # Case 1: Empty to piece (piece appeared)
                 if prev_piece == '' and curr_piece != '':
                     from_square = None
                     for r in range(8):
@@ -480,7 +434,6 @@ def detect_movement(prev_board, curr_board):
                         change = f"-{to_square}"
                     changes.append(change)
                 
-                # Case 2: Piece to empty (piece disappeared)
                 elif prev_piece != '' and curr_piece == '':
                     from_square = f"{chr(97 + col)}{8 - row}"
                     to_square = None
@@ -497,7 +450,6 @@ def detect_movement(prev_board, curr_board):
                         change = f"{from_square}-"
                     changes.append(change)
                 
-                # Case 3: Piece to different piece (piece replaced, treat as capture/change)
                 elif prev_piece != '' and curr_piece != '':
                     from_square = None
                     for r in range(8):
@@ -593,7 +545,7 @@ def annotate_frame(frame, moves, frame_time, points, M):
     return annotated
 
 def main(start_time=0, end_time=10, frame_interval=1.0):
-    """Main function to process video and detect chess moves, pausing on movement."""
+    """Main function to process video, detect chessboard differences, and highlight in a loop."""
     out = None
     try:
         video_path = select_video_file()
@@ -615,6 +567,19 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
             logging.error(f"Cannot open video file: {video_path}")
             raise ValueError("Cannot open video file")
         
+        # Initialize video writer
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            logging.error("Invalid FPS value in video")
+            raise ValueError("Invalid FPS value")
+        
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        output_path = "annotated_chess_moves.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, fps / frame_interval, (frame_width, frame_height))
+        
+        # Chessboard detection
         window_name = "Chessboard Detection (Press 'q' to select corners manually)"
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
         board_detected = False
@@ -665,9 +630,6 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                     board_detected = True
                     break
         
-        cap.release()
-        cv2.destroyAllWindows()
-        
         if not board_detected:
             logging.info("No chessboard detected automatically, using hardcoded points")
             board_points = np.array([
@@ -677,54 +639,69 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                 [1280, 836]
             ], dtype="float32")
         
-        frames, frame_times, fps = extract_frames_in_duration(video_path, start_time, end_time, frame_interval)
-        logging.info(f"Extracted {len(frames)} frames from {start_time}s to {end_time}s")
-        
-        output_path = "annotated_chess_moves.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        height, width = frames[0].shape[:2]
-        out = cv2.VideoWriter(output_path, fourcc, fps / frame_interval, (width, height))
-        
+        # Load templates
         templates = load_templates()
         
+        # Process frames in a loop
         fen_results = []
         prev_board = None
         prev_fen = None
+        frame_idx = 0
+        frame_step = max(1, int(frame_interval * fps))
+        start_frame = int(start_time * fps)
+        end_frame = int(end_time * fps)
         
-        for i, (frame, frame_time) in enumerate(zip(frames, frame_times)):
-            logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {i})")
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        while cap.isOpened() and cap.get(cv2.CAP_PROP_POS_FRAMES) <= end_frame:
+            frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            ret, frame = cap.read()
+            if not ret:
+                logging.warning(f"Failed to read frame {frame_num}")
+                break
+            
+            # Process only every frame_step frame
+            if frame_num % frame_step != 0:
+                continue
+                
+            frame_time = frame_num / fps
+            logging.info(f"Processing frame at {frame_time:.2f} seconds (frame {frame_num})")
             
             global match_result
             match_result = []
             
             try:
+                # Warp board
                 crop = frame
                 board, M = warp_board(crop, board_points)
-                frame_debug_dir = f'./debug_frames/frame_{i:03d}'
+                frame_debug_dir = f'./debug_frames/frame_{frame_idx:03d}'
                 os.makedirs(frame_debug_dir, exist_ok=True)
                 cv2.imwrite(f'{frame_debug_dir}/warped_board.png', board)
 
+                # Piece detection
                 squares, square_names, square_positions = split_into_squares(board, debug_dir=frame_debug_dir)
-                fen, curr_board = generate_fen(squares, square_names, templates, frame_idx=i, debug=True)
+                fen, curr_board = generate_fen(squares, square_names, templates, frame_idx=frame_idx, debug=True)
                 
                 if fen is None:
-                    logging.warning(f"Skipping frame {i} at {frame_time:.2f}s due to invalid FEN")
+                    logging.warning(f"Skipping frame {frame_idx} at {frame_time:.2f}s due to invalid FEN")
                     out.write(frame)
+                    frame_idx += 1
                     continue
                 
                 logging.info(f"Generated FEN at {frame_time:.2f}s: {fen}")
                 
+                # Detect differences
                 moves = []
                 if prev_fen is not None and fen != prev_fen:
                     moves = detect_movement(prev_board, curr_board)
                     logging.info(f"Detected moves at {frame_time:.2f}s: {moves}")
                 
+                # Highlight and annotate
                 annotated_frame = annotate_frame(frame, moves, frame_time, board_points, M)
                 
                 cv2.imshow(window_name, annotated_frame)
                 if moves:
                     cv2.putText(annotated_frame, "Move detected! Press any key to continue.", 
-                                (10, height - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                (10, frame_height - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     cv2.imshow(window_name, annotated_frame)
                     key = cv2.waitKey(0) & 0xFF
                     if key == ord('q'):
@@ -741,10 +718,12 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
                 fen_results.append((frame_time, fen, moves))
                 prev_board = deepcopy(curr_board)
                 prev_fen = fen
+                frame_idx += 1
             
             except ValueError as e:
                 logging.error(f"Processing error for frame at {frame_time:.2f}s: {e}")
                 out.write(frame)
+                frame_idx += 1
                 continue
         
         print("\nFEN and Move Results:")
@@ -759,7 +738,9 @@ def main(start_time=0, end_time=10, frame_interval=1.0):
     finally:
         if out is not None:
             out.release()
+        if 'cap' in locals():
+            cap.release()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main(start_time=200, end_time=350, frame_interval=0.5)
+    main(start_time=200, end_time=350, frame_interval=1)
